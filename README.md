@@ -45,7 +45,7 @@ tested in milliseconds on your laptop without an emulator. Everything that is
 
 ## Building
 
-Requirements: Android Studio (2026.1 or newer) or just a JDK 17+ and the Android SDK.
+Requirements: Android Studio (2026.1 or newer), or the Android SDK plus any JDK to launch Gradle with. `gradle/gradle-daemon-jvm.properties` pins the build to JDK 25 and Gradle downloads it automatically if it is missing.
 
 ```bash
 ./gradlew :engine:test          # run the engine unit tests
