@@ -128,7 +128,7 @@ private fun DealerArea(round: RoundState) {
                 Text("Place your bet to deal", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            CardFan(round.dealerCards, hiddenIndex = if (round.holeCardHidden) 1 else -1)
+            CardFan(round.dealerCards, hiddenIndex = if (round.holeCardHidden) 1 else -1, fromTop = true)
         }
     }
 }

@@ -1,5 +1,12 @@
 package com.mikehildner.blackjack.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,10 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -83,9 +95,46 @@ fun PlayingCard(card: Card?, modifier: Modifier = Modifier, width: Dp = 56.dp) {
     }
 }
 
+/** Set to false (Settings > Reduce animations) to make every card appear instantly. */
+val LocalAnimationsEnabled = compositionLocalOf { true }
+
 /**
- * A fan of overlapping cards. [hidden] marks indexes to show face down
- * (the dealer hole card).
+ * A card that can be face down and flips over when [faceUp] becomes true.
+ *
+ * The flip is a rotation around the Y axis. For the first half of the turn we
+ * draw the back; past 90 degrees we draw the face, itself rotated 180 degrees
+ * so that it is not mirrored.
+ */
+@Composable
+fun FlipCard(card: Card, faceUp: Boolean, modifier: Modifier = Modifier, width: Dp = 56.dp) {
+    val animate = LocalAnimationsEnabled.current
+    val rotation by animateFloatAsState(
+        targetValue = if (faceUp) 180f else 0f,
+        animationSpec = if (animate) tween(durationMillis = 450) else snap(),
+        label = "flip",
+    )
+    val showingFace = rotation > 90f
+    Box(
+        modifier.graphicsLayer {
+            rotationY = rotation
+            cameraDistance = 12f * density
+        },
+    ) {
+        if (showingFace) {
+            PlayingCard(card, Modifier.graphicsLayer { rotationY = 180f }, width)
+        } else {
+            PlayingCard(null, width = width)
+        }
+    }
+}
+
+/**
+ * A fan of overlapping cards. [hiddenIndex] marks the one card to show face
+ * down (the dealer hole card); it flips when the index changes to -1.
+ *
+ * New cards fade and slide in from [fromTop] (dealer) or the bottom (player).
+ * Cards already on the table keep their state and do not re-animate, which
+ * is what the `key(i, card)` and the remembered transition state are for.
  */
 @Composable
 fun CardFan(
@@ -94,15 +143,24 @@ fun CardFan(
     width: Dp = 56.dp,
     hiddenIndex: Int = -1,
     overlap: Dp = width * 0.52f,
+    fromTop: Boolean = false,
 ) {
+    val animate = LocalAnimationsEnabled.current
     val total = if (cards.isEmpty()) width else width + overlap * (cards.size - 1)
     Box(modifier.width(total).height(width / 0.7f)) {
         cards.forEachIndexed { i, card ->
-            PlayingCard(
-                card = if (i == hiddenIndex) null else card,
-                width = width,
-                modifier = Modifier.offset(x = overlap * i),
-            )
+            key(i, card) {
+                // Starts invisible on first composition and immediately targets visible,
+                // so the enter transition plays exactly once per card.
+                val visible = remember { MutableTransitionState(!animate) }.apply { targetState = true }
+                AnimatedVisibility(
+                    visibleState = visible,
+                    enter = fadeIn(tween(200)) + slideInVertically(tween(320)) { height -> if (fromTop) -height else height },
+                    modifier = Modifier.offset(x = overlap * i),
+                ) {
+                    FlipCard(card, faceUp = i != hiddenIndex, width = width)
+                }
+            }
         }
     }
 }

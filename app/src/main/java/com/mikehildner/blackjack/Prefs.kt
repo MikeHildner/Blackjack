@@ -20,6 +20,8 @@ data class AppSettings(
     val showOdds: Boolean = true,
     val showCount: Boolean = false,
     val startingBankroll: Int = 1000,
+    /** Card deal and flip animations. Off makes everything instant. */
+    val animations: Boolean = true,
 )
 
 /** Lifetime statistics, also persisted. */
@@ -60,6 +62,7 @@ class Prefs(context: Context) {
             showOdds = sp.getBoolean("showOdds", true),
             showCount = sp.getBoolean("showCount", false),
             startingBankroll = sp.getInt("startingBankroll", 1000),
+            animations = sp.getBoolean("animations", true),
         )
     }
 
@@ -80,6 +83,7 @@ class Prefs(context: Context) {
         putBoolean("showOdds", s.showOdds)
         putBoolean("showCount", s.showCount)
         putInt("startingBankroll", s.startingBankroll)
+        putBoolean("animations", s.animations)
     }
 
     /** Null until the first hand has been played. */

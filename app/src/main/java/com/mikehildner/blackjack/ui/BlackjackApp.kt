@@ -13,6 +13,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,12 +54,14 @@ fun BlackjackApp(vm: BlackjackViewModel = viewModel()) {
         },
     ) { padding ->
         val modifier = Modifier.padding(padding)
-        when (screen) {
-            Screen.TABLE -> TableScreen(vm, modifier)
-            Screen.CHART -> StrategyChartScreen(vm, modifier)
-            Screen.COUNT -> CountTrainerScreen(vm, modifier)
-            Screen.LEARN -> LearnScreen(vm, modifier)
-            Screen.SETTINGS -> SettingsScreen(vm, modifier)
+        CompositionLocalProvider(LocalAnimationsEnabled provides vm.settings.animations) {
+            when (screen) {
+                Screen.TABLE -> TableScreen(vm, modifier)
+                Screen.CHART -> StrategyChartScreen(vm, modifier)
+                Screen.COUNT -> CountTrainerScreen(vm, modifier)
+                Screen.LEARN -> LearnScreen(vm, modifier)
+                Screen.SETTINGS -> SettingsScreen(vm, modifier)
+            }
         }
     }
 }
