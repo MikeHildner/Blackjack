@@ -39,6 +39,7 @@ import com.mikehildner.blackjack.engine.Payout
 import com.mikehildner.blackjack.engine.Phase
 import com.mikehildner.blackjack.engine.Preset
 import com.mikehildner.blackjack.engine.Rules
+import com.mikehildner.blackjack.engine.Variant
 import com.mikehildner.blackjack.ui.theme.Gold
 import java.util.Locale
 
@@ -96,6 +97,15 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
         if (vm.round.phase != Phase.BETTING) {
             Text("Rule changes take effect when the current hand is over.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+
+        ChipRow("Game", Variant.entries.map { it.label to it }, rules.variant) { update(rules.copy(variant = it)) }
+        Text(
+            if (rules.variant == Variant.FREE_BET)
+                "Free Bet: the house pays for your doubles on hard 9, 10, 11 and for your splits (except tens). In return a dealer 22 is a push, not a bust."
+            else "Classic blackjack. Switch to Free Bet to try the variant dealt at Hard Rock Tulsa.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         val preset = Preset.matching(rules)
         ChipRow("Preset", Preset.entries.map { it.label to it } + ("Custom" to null), preset) { chosen ->

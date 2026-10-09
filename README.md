@@ -16,7 +16,8 @@ Play money only. There is nothing to buy and nothing phones home.
 | **Chart** | The complete basic strategy chart for the rules you chose. The cell for your current hand is highlighted while you play. |
 | **Count** | Hi-Lo card counting: the live running and true count at your table, a betting suggestion, and a flash-card drill. |
 | **Learn** | Rules, soft vs hard hands, payouts, insurance, expected value, counting, a glossary, and a live breakdown of what each house rule costs you. |
-| **Settings** | Presets (Vegas Strip, Hard Rock Tulsa, Single deck) or custom: decks, S17/H17, 3:2 or 6:5, double after split, surrender, doubling limits, resplitting, peeking, penetration, continuous shuffler, per-hand ante, bankroll. |
+| **Free Bet Blackjack** | The variant dealt at Hard Rock Tulsa: free doubles on 9-11, free splits, dealer 22 pushes. Strategy is computed from expected value for the rules in play, for both real-money and free-bet hands. |
+| **Settings** | Game (Classic or Free Bet), presets (Vegas Strip, Hard Rock Tulsa, Tulsa Free Bet, Single deck) or custom: decks, S17/H17, 3:2 or 6:5, double after split, surrender, doubling limits, resplitting, peeking, penetration, continuous shuffler, per-hand ante, bankroll. |
 
 The **per-hand ante** deserves a mention. Oklahoma tribal casinos charge a fee on every hand
 (50 cents, $1 on bigger bets). The app deducts it, shows the effective house edge at your bet

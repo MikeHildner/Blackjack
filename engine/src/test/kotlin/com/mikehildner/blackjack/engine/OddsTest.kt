@@ -100,6 +100,48 @@ class OddsTest {
         assertEquals(52, c.total)
     }
 
+    // ------------------------------------------------------- Free Bet Blackjack
+
+    private val freeBetRules = Rules(variant = Variant.FREE_BET, dealerHitsSoft17 = true, lateSurrender = false, resplitAces = true)
+    private val freeBet = Odds(fresh, freeBetRules)
+
+    @Test
+    fun `push 22 moves the dealer 22 out of the bust figure`() {
+        val classic = Odds(fresh, Rules(dealerHitsSoft17 = true)).dealerDistribution(6)
+        val fb = freeBet.dealerDistribution(6)
+        assertClose(1.0, (17..26).sumOf { fb[it] }, 1e-9)
+        assertClose(classic.bust, fb.bust + fb.p22, 1e-9, "same cards, 22 just reclassified")
+        assertTrue(fb.p22 > 0.05, "a dealer 6 busts with exactly 22 fairly often")
+        assertTrue(fb.evStand(20) < classic.evStand(20), "standing is worth less when 22 only pushes")
+    }
+
+    @Test
+    fun `a free double beats a real double and hitting on 11`() {
+        val hand = Hand.of(100, "6h", "5c")
+        val dealer = freeBet.dealerDistribution(6)
+        val free = freeBet.evDouble(hand, dealer, free = true)
+        val real = freeBet.evDouble(hand, dealer, free = false)
+        assertTrue(free > real, "free $free vs real $real")
+        assertTrue(free > freeBet.evHit(hand, dealer))
+        // Win pays 2 units, lose costs 1, push (including dealer 22) 0: the EV sits a little under +1.
+        assertTrue(free > 0.6 && free < 1.4, "free double EV was $free")
+    }
+
+    @Test
+    fun `a hand riding on a free bet only values wins`() {
+        val freeHand = Hand(listOf(Card.of("Kh"), Card.of("Qc")), bet = 0, isFromSplit = true, freeBet = 100)
+        val dealer = freeBet.dealerDistribution(6)
+        assertClose(dealer.pPlayerWins(20), freeBet.evStand(freeHand, dealer), 1e-9, "a loss or push costs nothing, a win pays one unit")
+        assertTrue(freeBet.evStand(freeHand, dealer) > 0)
+    }
+
+    @Test
+    fun `classic numbers are unchanged by the payoff refactor`() {
+        val report = odds.analyze(Hand.of(10, "10h", "6c"), Card.of("10s"), setOf(Action.HIT, Action.STAND, Action.SURRENDER))
+        assertClose(-0.5, report.ev(Action.SURRENDER)!!, 1e-9)
+        assertClose(odds.dealerDistribution(10).evStand(16), report.ev(Action.STAND)!!, 1e-9)
+    }
+
     @Test
     fun `basic strategy chart agrees with brute-force EV on hard totals`() {
         // Every hard-total cell of the chart should match the EV-maximising action within a tiny margin.

@@ -306,6 +306,138 @@ class GameTest {
         assertTrue(seen.size > before, "the listener still reports cards from the fresh shoe")
     }
 
+    // ------------------------------------------------------- Free Bet Blackjack
+
+    /** Tulsa Free Bet rules without the ante or shuffler, so the numbers below are about the game itself. */
+    private val fb = Rules.HARD_ROCK_TULSA_FREE_BET.copy(ante = 0, anteAboveThreshold = 0, continuousShuffle = false)
+
+    @Test
+    fun `free double on 11 is paid by the house and wins both`() {
+        // Player 6,5 vs dealer 6 (hole 9). Free double draws K -> 21. Dealer 15 draws 2 -> 17.
+        val g = game("6h", "6c", "5d", "9s", "Kc", "2d", rules = fb)
+        g.placeBet(BET)
+        assertTrue(g.isFree(Action.DOUBLE))
+        assertTrue(Action.DOUBLE in g.availableActions())
+        g.act(Action.DOUBLE)
+        val hand = g.state.hands[0]
+        assertEquals(1_000, hand.bet, "no extra real money went down")
+        assertEquals(1_000, hand.freeBet)
+        assertEquals(2_000, g.state.results[0].net, "win pays the bet and the free bet")
+        assertEquals(12_000, g.bankroll)
+    }
+
+    @Test
+    fun `losing a free double costs only the original bet`() {
+        // Player 11 vs 6 (hole 9). Free double draws 2 -> 13. Dealer 15 draws 2 -> 17.
+        val g = game("6h", "6c", "5d", "9s", "2c", "2d", rules = fb)
+        g.placeBet(BET)
+        g.act(Action.DOUBLE)
+        assertEquals(Outcome.LOSE, g.state.results[0].outcome)
+        assertEquals(-1_000, g.state.results[0].net)
+        assertEquals(9_000, g.bankroll)
+    }
+
+    @Test
+    fun `free split second hand has no money at risk`() {
+        // Player 8,8 vs 6 (hole 10). Split draws 3 and 5. Dealer 16 draws 4 -> 20 and beats both.
+        val g = game("8h", "6c", "8d", "10s", "3c", "5d", "4c", rules = fb)
+        g.placeBet(BET)
+        assertTrue(g.isFree(Action.SPLIT))
+        g.act(Action.SPLIT)
+        assertEquals(9_000, g.bankroll, "splitting cost nothing")
+        assertEquals(1_000, g.state.hands[0].bet)
+        assertEquals(0, g.state.hands[1].bet)
+        assertEquals(1_000, g.state.hands[1].freeBet)
+        g.act(Action.STAND)
+        g.act(Action.STAND)
+        assertEquals(listOf(-1_000, 0), g.state.results.map { it.net }, "the free hand loses nothing")
+        assertEquals(9_000, g.bankroll)
+    }
+
+    @Test
+    fun `a free double on a free-split hand stacks the house money`() {
+        // 8,8 vs 6 (hole 10). Hand one 8+K = 18, hand two 8+3 = 11 on a free bet. Free double draws 10 -> 21. Dealer busts with 9.
+        val g = game("8h", "6c", "8d", "10s", "Kc", "3d", "10h", "9c", rules = fb)
+        g.placeBet(BET)
+        g.act(Action.SPLIT)
+        g.act(Action.STAND)
+        assertTrue(g.isFree(Action.DOUBLE))
+        g.act(Action.DOUBLE)
+        val two = g.state.hands[1]
+        assertEquals(0, two.bet)
+        assertEquals(2_000, two.freeBet)
+        assertEquals(listOf(1_000, 2_000), g.state.results.map { it.net })
+        assertEquals(13_000, g.bankroll)
+    }
+
+    @Test
+    fun `dealer 22 pushes a standing hand in Free Bet`() {
+        // Player K,Q = 20 vs 6 (hole 10). Dealer 16 draws 6 -> 22.
+        val g = game("Kh", "6c", "Qd", "10s", "6d", rules = fb)
+        g.placeBet(BET)
+        g.act(Action.STAND)
+        assertEquals(22, g.state.dealerHand.total)
+        assertEquals(Outcome.PUSH_22, g.state.results[0].outcome)
+        assertEquals(10_000, g.bankroll)
+    }
+
+    @Test
+    fun `dealer 22 pushes a doubled hand too`() {
+        // Player 6,5 vs 6 (hole 10). Free double draws 9 -> 20. Dealer 16 draws 6 -> 22.
+        val g = game("6h", "6c", "5d", "10s", "9c", "6d", rules = fb)
+        g.placeBet(BET)
+        g.act(Action.DOUBLE)
+        assertEquals(Outcome.PUSH_22, g.state.results[0].outcome)
+        assertEquals(0, g.state.results[0].net)
+        assertEquals(10_000, g.bankroll)
+    }
+
+    @Test
+    fun `dealer 22 is a plain bust in classic blackjack`() {
+        val g = game("Kh", "6c", "Qd", "10s", "6d")
+        g.placeBet(BET)
+        g.act(Action.STAND)
+        assertEquals(Outcome.WIN, g.state.results[0].outcome)
+        assertEquals(11_000, g.bankroll)
+    }
+
+    @Test
+    fun `player blackjack is paid before the dealer plays, so push 22 cannot touch it`() {
+        val g = game("Ah", "6c", "Kd", "10s", "6d", rules = fb)
+        g.placeBet(BET)
+        assertEquals(Phase.SETTLED, g.state.phase)
+        assertEquals(Outcome.BLACKJACK, g.state.results[0].outcome)
+        assertEquals(2, g.state.dealerCards.size)
+        assertEquals(11_500, g.bankroll)
+    }
+
+    @Test
+    fun `splitting tens costs real money but every other pair is free`() {
+        val tens = game("Kh", "6c", "Qd", "10s", rules = fb, bankroll = 1_000)
+        tens.placeBet(BET)
+        assertFalse(tens.isFree(Action.SPLIT))
+        assertFalse(Action.SPLIT in tens.availableActions(), "no money left to pay for a real split")
+
+        val eights = game("8h", "6c", "8d", "10s", rules = fb, bankroll = 1_000)
+        eights.placeBet(BET)
+        assertTrue(eights.isFree(Action.SPLIT))
+        assertTrue(Action.SPLIT in eights.availableActions(), "free, so affordable with an empty bankroll")
+    }
+
+    @Test
+    fun `soft totals and three-card hands get no free double`() {
+        val soft = game("Ah", "6c", "8d", "10s", rules = fb)
+        soft.placeBet(BET)
+        assertTrue(Action.DOUBLE in soft.availableActions(), "a real-money double is still allowed on soft 19")
+        assertFalse(soft.isFree(Action.DOUBLE))
+
+        val three = game("2h", "6c", "3d", "10s", "6s", rules = fb)
+        three.placeBet(BET)
+        three.act(Action.HIT) // 2,3,6 = hard 11 with three cards
+        assertFalse(Action.DOUBLE in three.availableActions())
+        assertFalse(three.isFree(Action.DOUBLE))
+    }
+
     @Test
     fun `a real shoe plays thousands of rounds without error`() {
         val rules = Rules()

@@ -111,6 +111,33 @@ A **continuous shuffling machine** (`Rules.continuousShuffle`) returns every car
 after each round. It does not change basic strategy or the rule edge, but it makes the running
 count meaningless; the app resets the count every hand and says so.
 
+## 4b. Free Bet Blackjack
+
+Free Bet changes two things in the maths.
+
+**Payoff profiles.** A hand has real money (`Hand.bet`) and house money (`Hand.freeBet`). A win
+pays both, a loss costs only the real money, a push pays nothing. Every EV in `Odds` is computed
+for the hand's profile and divided by its wager so actions stay comparable:
+
+    EV(stand) = [ P(win) × (bet + free) − P(lose) × bet ] / (bet + free)
+
+For a classic hand (`free = 0`) this is the usual `P(win) − P(lose)`. For the second hand of a
+free split (`bet = 0`) it is just `P(win)`: a push is worth exactly as much as a loss, which is
+why such hands play more aggressively.
+
+A free double adds `wager` to `free`; a real double adds it to `bet` and risks it. That is the
+whole difference, and it is why the free double on 9, 10 and 11 is always right.
+
+**Push 22.** `DealerDistribution` keeps totals 17..26 separately. Under Free Bet rules a 22
+counts as neither a win nor a loss for the player, so `pPlayerWins` leaves it out. The dealer
+makes exactly 22 about 8% of the time against a 6, which is why standing on stiffs is worth a
+little less than in the classic game.
+
+**Strategy.** There is no hand-coded Free Bet chart. `FreeBetStrategy` asks `Odds` for every
+legal action against a fresh shoe and takes the best, for both the real-money and the free-bet
+profile, and memoises the answers. The published house edge of 1.04% (6D, H17, DAS, RSA, 3:2,
+no surrender) and its rule deltas are in `Rules.freeBetHouseEdge`.
+
 ## 5. Card counting
 
 Hi-Lo tags 2–6 as +1, 7–9 as 0, tens and aces as −1. A deck sums to zero, so a

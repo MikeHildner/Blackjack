@@ -21,6 +21,8 @@ enum class Outcome(val label: String) {
     BUST("Bust"),
     SURRENDER("Surrendered"),
     DEALER_BLACKJACK("Dealer blackjack"),
+    /** Free Bet Blackjack: the dealer busted with exactly 22, which only pushes. */
+    PUSH_22("Dealer 22: push"),
 }
 
 /** Result for a single hand: the outcome and the net change to the bankroll (profit, loss, or 0). */
@@ -154,6 +156,18 @@ class Game(
 
     // ------------------------------------------------------------ player turn
 
+    /**
+     * Free Bet Blackjack: would this action be paid for by the house?
+     * Free double: two-card hard 9, 10 or 11. Free split: any pair but tens.
+     */
+    fun isFree(action: Action): Boolean = state.currentHand?.let { isFree(action, it) } ?: false
+
+    private fun isFree(action: Action, hand: Hand): Boolean = when (action) {
+        Action.DOUBLE -> rules.isFreeDouble(hand)
+        Action.SPLIT -> rules.isFreeSplit(hand)
+        else -> false
+    }
+
     /** Legal actions for the current hand, considering rules and bankroll. */
     fun availableActions(): Set<Action> {
         val hand = state.currentHand ?: return emptySet()
@@ -161,15 +175,17 @@ class Game(
 
         val actions = mutableSetOf(Action.HIT, Action.STAND)
         val firstDecision = hand.cards.size == 2
-        val canAffordAnother = bankroll >= hand.bet
+        val canAffordAnother = bankroll >= hand.wager
 
-        if (firstDecision && canAffordAnother && !hand.isFromSplitAces) {
+        if (firstDecision && !hand.isFromSplitAces) {
             val dasOk = !hand.isFromSplit || rules.doubleAfterSplit
-            if (dasOk && rules.doubleRestriction.allows(hand)) actions += Action.DOUBLE
+            val funded = canAffordAnother || isFree(Action.DOUBLE, hand)
+            if (dasOk && funded && rules.doubleRestriction.allows(hand)) actions += Action.DOUBLE
         }
-        if (firstDecision && hand.isPair && canAffordAnother && state.hands.size < rules.maxSplitHands) {
+        if (firstDecision && hand.isPair && state.hands.size < rules.maxSplitHands) {
             val acesOk = !hand.cards[0].isAce || !hand.isFromSplit || rules.resplitAces
-            if (acesOk) actions += Action.SPLIT
+            val funded = canAffordAnother || isFree(Action.SPLIT, hand)
+            if (acesOk && funded) actions += Action.SPLIT
         }
         if (firstDecision && !hand.isFromSplit && rules.lateSurrender && state.hands.size == 1) {
             actions += Action.SURRENDER
@@ -190,17 +206,29 @@ class Game(
             }
             Action.STAND -> hands[idx] = hand.copy(isStood = true)
             Action.DOUBLE -> {
-                bankroll -= hand.bet
-                hands[idx] = (hand + drawVisible()).copy(bet = hand.bet * 2, isDoubled = true)
+                val extra = hand.wager
+                val doubled = if (isFree(Action.DOUBLE, hand)) {
+                    hand.copy(freeBet = hand.freeBet + extra)       // the house puts up the lammer
+                } else {
+                    bankroll -= extra
+                    hand.copy(bet = hand.bet + extra)
+                }
+                hands[idx] = (doubled + drawVisible()).copy(isDoubled = true)
             }
             Action.SURRENDER -> hands[idx] = hand.copy(isSurrendered = true)
             Action.SPLIT -> {
-                bankroll -= hand.bet
                 val aces = hand.cards[0].isAce
-                val one = Hand(listOf(hand.cards[0]), hand.bet, isFromSplit = true, isFromSplitAces = aces) + drawVisible()
-                val two = Hand(listOf(hand.cards[1]), hand.bet, isFromSplit = true, isFromSplitAces = aces) + drawVisible()
-                hands[idx] = finishSplitHand(one)
-                hands.add(idx + 1, finishSplitHand(two))
+                // Hand one keeps whatever was riding on the original hand.
+                val one = Hand(listOf(hand.cards[0]), hand.bet, isFromSplit = true, isFromSplitAces = aces, freeBet = hand.freeBet)
+                // Hand two is funded either by the house (free split) or by the player.
+                val two = if (isFree(Action.SPLIT, hand)) {
+                    Hand(listOf(hand.cards[1]), bet = 0, isFromSplit = true, isFromSplitAces = aces, freeBet = hand.wager)
+                } else {
+                    bankroll -= hand.wager
+                    Hand(listOf(hand.cards[1]), bet = hand.wager, isFromSplit = true, isFromSplitAces = aces)
+                }
+                hands[idx] = finishSplitHand(one + drawVisible())
+                hands.add(idx + 1, finishSplitHand(two + drawVisible()))
             }
         }
         state = state.copy(hands = hands)
@@ -266,16 +294,24 @@ class Game(
         state = state.copy(phase = Phase.SETTLED, results = results, insuranceNet = insuranceNet, holeCardHidden = false)
     }
 
-    private fun settleHand(hand: Hand, dealer: Hand, dealerBj: Boolean): HandResult = when {
-        hand.isSurrendered -> HandResult(Outcome.SURRENDER, -hand.bet / 2)
-        hand.isBust -> HandResult(Outcome.BUST, -hand.bet)
-        dealerBj && hand.isBlackjack -> HandResult(Outcome.PUSH, 0)
-        dealerBj -> HandResult(Outcome.DEALER_BLACKJACK, -hand.bet)
-        hand.isBlackjack -> HandResult(Outcome.BLACKJACK, (hand.bet * rules.blackjackPayout.multiplier).toInt())
-        dealer.isBust -> HandResult(Outcome.WIN, hand.bet)
-        hand.total > dealer.total -> HandResult(Outcome.WIN, hand.bet)
-        hand.total < dealer.total -> HandResult(Outcome.LOSE, -hand.bet)
-        else -> HandResult(Outcome.PUSH, 0)
+    /**
+     * A win pays the real bet plus any free bet; a loss costs only the real bet;
+     * a push returns nothing extra (the free bet is simply taken back).
+     */
+    private fun settleHand(hand: Hand, dealer: Hand, dealerBj: Boolean): HandResult {
+        val win = hand.bet + hand.freeBet
+        return when {
+            hand.isSurrendered -> HandResult(Outcome.SURRENDER, -hand.bet / 2)
+            hand.isBust -> HandResult(Outcome.BUST, -hand.bet)
+            dealerBj && hand.isBlackjack -> HandResult(Outcome.PUSH, 0)
+            dealerBj -> HandResult(Outcome.DEALER_BLACKJACK, -hand.bet)
+            hand.isBlackjack -> HandResult(Outcome.BLACKJACK, (hand.bet * rules.blackjackPayout.multiplier).toInt())
+            dealer.total == 22 && rules.pushOn22 -> HandResult(Outcome.PUSH_22, 0)
+            dealer.isBust -> HandResult(Outcome.WIN, win)
+            hand.total > dealer.total -> HandResult(Outcome.WIN, win)
+            hand.total < dealer.total -> HandResult(Outcome.LOSE, -hand.bet)
+            else -> HandResult(Outcome.PUSH, 0)
+        }
     }
 
     // ------------------------------------------------------------- next round

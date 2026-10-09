@@ -77,6 +77,9 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
 
     val trueCount: Double get() = counter.trueCount(decksRemaining)
 
+    /** Free Bet Blackjack: is this action paid for by the house right now? Read after [actions] so it recomposes. */
+    fun isFree(action: Action): Boolean = action in actions && game.isFree(action)
+
     /** Bet within limits and bankroll covering both the bet and the ante. */
     val canDeal: Boolean
         get() = round.phase == Phase.BETTING && bet in rules.minBet..rules.maxBet && bet + rules.anteFor(bet) <= bankroll

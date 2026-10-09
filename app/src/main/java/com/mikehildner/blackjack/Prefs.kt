@@ -63,6 +63,7 @@ class Prefs(context: Context) {
     fun loadSettings(): AppSettings {
         val d = Rules()
         val rules = Rules(
+            variant = enumOr("variant", d.variant),
             decks = sp.getInt("decks", d.decks),
             dealerHitsSoft17 = sp.getBoolean("h17", d.dealerHitsSoft17),
             blackjackPayout = enumOr("payout", d.blackjackPayout),
@@ -91,6 +92,7 @@ class Prefs(context: Context) {
 
     fun saveSettings(s: AppSettings) = sp.edit {
         val r = s.rules
+        putString("variant", r.variant.name)
         putInt("decks", r.decks)
         putBoolean("h17", r.dealerHitsSoft17)
         putString("payout", r.blackjackPayout.name)

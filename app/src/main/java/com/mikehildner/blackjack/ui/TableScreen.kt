@@ -75,7 +75,7 @@ fun TableScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            DealerArea(round)
+            DealerArea(round, vm.rules.pushOn22)
             Spacer(Modifier.height(16.dp))
             PlayerArea(round)
             Spacer(Modifier.height(12.dp))
@@ -123,13 +123,17 @@ private fun StatusItem(label: String, value: String, valueColor: Color = Color.W
 // ------------------------------------------------------------------ table
 
 @Composable
-private fun DealerArea(round: RoundState) {
+private fun DealerArea(round: RoundState, pushOn22: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Dealer", style = MaterialTheme.typography.titleMedium)
             if (round.dealerCards.isNotEmpty()) {
                 val visible = round.visibleDealerHand
-                val label = if (round.holeCardHidden) "Showing ${visible.total}" else visible.describe()
+                val label = when {
+                    round.holeCardHidden -> "Showing ${visible.total}"
+                    visible.total == 22 && pushOn22 -> "22: push"
+                    else -> visible.describe()
+                }
                 Pill(label, FeltLight)
             }
         }
@@ -172,18 +176,21 @@ private fun HandRow(hand: Hand, active: Boolean, result: HandResult?, index: Int
                 if (index != null) Text("Hand $index", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Pill(hand.describe(), if (hand.isBust) Bad else FeltLight)
             }
-            Text(
-                buildString {
-                    append("Bet ").append(money(hand.bet))
-                    if (hand.isDoubled) append(" (doubled)")
-                    if (hand.isSurrendered) append(" (surrendered)")
-                },
-                fontSize = 13.sp,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    buildString {
+                        if (hand.bet == 0) append("No money at risk") else append("Bet ").append(money(hand.bet))
+                        if (hand.isDoubled) append(" (doubled)")
+                        if (hand.isSurrendered) append(" (surrendered)")
+                    },
+                    fontSize = 13.sp,
+                )
+                if (hand.freeBet > 0) Pill("Free bet ${money(hand.freeBet)}", Gold, textColor = Color.Black)
+            }
             if (result != null) {
                 val color = when (result.outcome) {
                     Outcome.WIN, Outcome.BLACKJACK -> Good
-                    Outcome.PUSH -> Gold
+                    Outcome.PUSH, Outcome.PUSH_22 -> Gold
                     else -> Bad
                 }
                 Pill("${result.outcome.label}  ${signedMoney(result.net)}", color, textColor = Color.Black)
@@ -200,6 +207,7 @@ private fun ResultBanner(round: RoundState) {
         round.results.size == 1 && round.results[0].outcome == Outcome.BLACKJACK && round.insuranceNet == 0 -> "Blackjack! You win ${money(net)}"
         net > 0 -> "You win ${money(net)}"
         net < 0 -> "You lose ${money(-net)}"
+        round.results.any { it.outcome == Outcome.PUSH_22 } -> "Dealer 22: a push, not a bust"
         else -> "Push: your bet comes back"
     }
     Text(
@@ -326,7 +334,7 @@ private fun OddsPanel(vm: BlackjackViewModel) {
 private fun EvRow(value: ActionValue, best: Boolean) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(
-            value.action.label + if (value.approximate) " (approx.)" else "",
+            (if (value.free) "Free " + value.action.label.lowercase() else value.action.label) + if (value.approximate) " (approx.)" else "",
             fontWeight = if (best) FontWeight.Bold else FontWeight.Normal,
             color = if (best) Good else Color.White,
         )
@@ -451,6 +459,7 @@ private fun ActionControls(vm: BlackjackViewModel) {
 private fun ActionButton(vm: BlackjackViewModel, action: Action, hint: Action?, modifier: Modifier) {
     val enabled = action in vm.actions
     val highlighted = hint == action
+    val free = vm.isFree(action)
     Button(
         onClick = { vm.act(action) },
         enabled = enabled,
@@ -463,7 +472,7 @@ private fun ActionButton(vm: BlackjackViewModel, action: Action, hint: Action?, 
             disabledContentColor = Color(0x66FFFFFF),
         ),
     ) {
-        Text(action.label)
+        Text(if (free) "Free ${action.label.lowercase()}" else action.label, maxLines = 1)
     }
 }
 

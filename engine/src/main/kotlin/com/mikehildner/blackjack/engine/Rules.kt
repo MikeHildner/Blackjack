@@ -21,6 +21,19 @@ enum class DoubleRestriction(val label: String) {
 }
 
 /**
+ * Which game is being dealt.
+ *
+ * Free Bet Blackjack: the house pays for your doubles on hard 9, 10 and 11 and
+ * for your splits (except tens); in exchange a dealer 22 is a push rather than
+ * a bust. The free bets are worth about 6% to the player, push-22 about 7% to
+ * the house, for a net edge of about 1% under the usual rules.
+ */
+enum class Variant(val label: String) {
+    CLASSIC("Classic"),
+    FREE_BET("Free Bet"),
+}
+
+/**
  * The house rules for a table. Every one of these changes the house edge,
  * and basic strategy has to adapt to several of them.
  *
@@ -28,6 +41,7 @@ enum class DoubleRestriction(val label: String) {
  * Strip shoe game.
  */
 data class Rules(
+    val variant: Variant = Variant.CLASSIC,
     val decks: Int = 6,
     /** H17: dealer hits soft 17. S17 (false) is better for the player. */
     val dealerHitsSoft17: Boolean = false,
@@ -72,6 +86,21 @@ data class Rules(
         require(ante >= 0 && anteAboveThreshold >= 0)
     }
 
+    /** Free Bet Blackjack: a dealer 22 pushes every standing player hand. */
+    val pushOn22: Boolean get() = variant == Variant.FREE_BET
+
+    /** Free Bet Blackjack: doubles on two-card hard 9, 10, 11 are paid for by the house. */
+    val freeDoubles: Boolean get() = variant == Variant.FREE_BET
+
+    /** Free Bet Blackjack: splits of any pair but tens are paid for by the house. */
+    val freeSplits: Boolean get() = variant == Variant.FREE_BET
+
+    /** Free Bet Blackjack: would doubling this hand be paid for by the house? Two-card hard 9, 10 or 11. */
+    fun isFreeDouble(hand: Hand): Boolean = freeDoubles && hand.cards.size == 2 && !hand.isSoft && hand.total in 9..11
+
+    /** Free Bet Blackjack: would splitting this hand be paid for by the house? Any pair but tens. */
+    fun isFreeSplit(hand: Hand): Boolean = freeSplits && hand.isPair && !hand.cards[0].rank.isTenValue
+
     /** The fee for a round with this original bet. */
     fun anteFor(bet: Int): Int = if (bet > anteThreshold) anteAboveThreshold else ante
 
@@ -94,7 +123,39 @@ data class Rules(
      * fresh shoe anyway.
      */
     val houseEdgePercent: Double
-        get() {
+        get() = when (variant) {
+            Variant.CLASSIC -> classicHouseEdge()
+            Variant.FREE_BET -> freeBetHouseEdge()
+        }
+
+    /**
+     * Free Bet Blackjack baseline (Wizard of Odds): 6 decks, H17, 3:2, DAS,
+     * resplit to 4 including aces, no surrender = 1.04%. Deltas are the
+     * published rule variations.
+     */
+    private fun freeBetHouseEdge(): Double {
+        var edge = 1.04
+        edge += when (decks) {
+            1 -> 0.14
+            2 -> 0.06
+            3, 4, 5 -> 0.02
+            6, 7 -> 0.0
+            else -> -0.01
+        }
+        if (!dealerHitsSoft17) edge -= 0.31
+        if (lateSurrender) edge -= 0.21
+        if (!doubleAfterSplit) edge += 0.70
+        if (!resplitAces) edge += 0.08
+        edge += when (blackjackPayout) {
+            Payout.THREE_TO_TWO -> 0.0
+            Payout.SIX_TO_FIVE -> 1.36
+            Payout.EVEN_MONEY -> 2.25
+        }
+        if (!dealerPeeks) edge += 0.11
+        return edge
+    }
+
+    private fun classicHouseEdge(): Double {
             // Baseline: 8 decks, S17, DAS, no surrender, 3:2, double any two, resplit to 4.
             var edge = 0.43
             edge += when (decks) {
@@ -128,8 +189,9 @@ data class Rules(
             return edge
         }
 
-    /** One-line summary like "6D S17 DAS LS 3:2" or "6D H17 DAS 3:2 +ante CSM". */
+    /** One-line summary like "6D S17 DAS LS 3:2" or "Free Bet 6D H17 DAS 3:2 +ante CSM". */
     fun summary(): String = buildString {
+        if (variant == Variant.FREE_BET) append("Free Bet ")
         append(decks).append("D ")
         append(if (dealerHitsSoft17) "H17 " else "S17 ")
         append(if (doubleAfterSplit) "DAS " else "NDAS ")
@@ -157,6 +219,9 @@ data class Rules(
             anteThreshold = 5_000,
             continuousShuffle = true,
         )
+
+        /** Same table, Free Bet game. Standard Free Bet rules allow resplitting aces. */
+        val HARD_ROCK_TULSA_FREE_BET = HARD_ROCK_TULSA.copy(variant = Variant.FREE_BET, resplitAces = true)
     }
 }
 
@@ -172,6 +237,12 @@ enum class Preset(val label: String, val description: String, val rules: Rules) 
         "Oklahoma: 50 cent ante per hand ($1 over $50), continuous shuffler, dealer hits soft 17, no surrender. " +
             "The ante is confirmed; check the felt for the rest.",
         Rules.HARD_ROCK_TULSA,
+    ),
+    HARD_ROCK_TULSA_FREE_BET(
+        "Tulsa Free Bet",
+        "Free Bet Blackjack at the same table: the house pays for doubles on 9-11 and for splits, but a dealer 22 " +
+            "is a push. About 1% edge before the 50 cent ante, which still applies.",
+        Rules.HARD_ROCK_TULSA_FREE_BET,
     ),
     SINGLE_DECK(
         "Single deck",

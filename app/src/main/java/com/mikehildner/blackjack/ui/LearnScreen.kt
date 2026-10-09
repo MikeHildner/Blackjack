@@ -34,6 +34,7 @@ import com.mikehildner.blackjack.BlackjackViewModel
 import com.mikehildner.blackjack.engine.DoubleRestriction
 import com.mikehildner.blackjack.engine.Payout
 import com.mikehildner.blackjack.engine.Rules
+import com.mikehildner.blackjack.engine.Variant
 import com.mikehildner.blackjack.ui.theme.Bad
 import com.mikehildner.blackjack.ui.theme.Good
 import java.util.Locale
@@ -103,6 +104,18 @@ private val Topics = listOf(
         Hard 16 against a 10 has an EV of about -0.54 whether you hit or stand. Surrendering is exactly -0.50. That is why surrender is correct: losing half for certain beats losing more than half on average.
 
         The live odds panel computes EV from the cards actually left in the shoe, so the numbers shift as cards come out. That shift is what card counters exploit.
+        """.trimIndent(),
+    ),
+    Topic(
+        "Free Bet Blackjack",
+        """
+        Free Bet Blackjack is the variant dealt at Hard Rock Tulsa and many other casinos. The pitch is generous: the house pays for your double down on any two-card hard 9, 10 or 11, and for your split of any pair except tens. A plastic "free bet" button goes next to your chips. If the hand wins, the button turns into real money; if it loses or pushes, the house just takes it back. You can never lose more than your original bet on a free action.
+
+        The catch is one small rule: if the dealer busts with exactly 22, every hand still standing is a push instead of a win. That happens roughly one hand in twelve, and it quietly takes back about 7% of your bets. The free doubles and splits give back about 6%. Net result under the usual rules (six decks, dealer hits soft 17, 3:2 blackjack): a house edge of about 1.04%, three times a good classic game but far better than any 6:5 table.
+
+        Strategy in one line: take every free double and every free split. Beyond that the chart is mostly classic, with two twists. Because a dealer bust to 22 is worth nothing to you, standing on a stiff 12 to 16 against a weak dealer card is slightly less attractive, and a few of those cells flip to hit. And a hand that is riding on a free bet, the second hand of a free split, has no money at risk, so a push is as bad as a loss: those hands play harder still. The Chart tab computes both versions for whatever rules you set.
+
+        Side bets: Push 22 (pays when the dealer makes 22) and Pot of Gold carry house edges between about 5% and 12%. Skip them.
         """.trimIndent(),
     ),
     Topic(
@@ -200,14 +213,17 @@ private fun HouseEdgeCard(rules: Rules) {
     val base = rules.houseEdgePercent
     fun delta(alt: Rules) = alt.houseEdgePercent - base
 
+    val freeBet = rules.variant == Variant.FREE_BET
     val comparisons = buildList {
+        add("${if (freeBet) "Classic" else "Free Bet"} game instead" to delta(rules.copy(variant = if (freeBet) Variant.CLASSIC else Variant.FREE_BET)))
         add("Dealer ${if (rules.dealerHitsSoft17) "stands" else "hits"} soft 17" to delta(rules.copy(dealerHitsSoft17 = !rules.dealerHitsSoft17)))
         add("Blackjack pays ${if (rules.blackjackPayout == Payout.THREE_TO_TWO) "6:5" else "3:2"}" to delta(rules.copy(blackjackPayout = if (rules.blackjackPayout == Payout.THREE_TO_TWO) Payout.SIX_TO_FIVE else Payout.THREE_TO_TWO)))
         add("${if (rules.doubleAfterSplit) "No d" else "D"}ouble after split" to delta(rules.copy(doubleAfterSplit = !rules.doubleAfterSplit)))
         add("${if (rules.lateSurrender) "No s" else "S"}urrender" to delta(rules.copy(lateSurrender = !rules.lateSurrender)))
+        if (freeBet) add("${if (rules.resplitAces) "No r" else "R"}esplitting aces" to delta(rules.copy(resplitAces = !rules.resplitAces)))
         if (rules.decks > 1) add("Single deck instead of ${rules.decks}" to delta(rules.copy(decks = 1)))
         if (rules.decks < 8) add("Eight decks instead of ${rules.decks}" to delta(rules.copy(decks = 8)))
-        if (rules.doubleRestriction == DoubleRestriction.ANY_TWO) add("Double on 10-11 only" to delta(rules.copy(doubleRestriction = DoubleRestriction.TEN_TO_ELEVEN)))
+        if (!freeBet && rules.doubleRestriction == DoubleRestriction.ANY_TWO) add("Double on 10-11 only" to delta(rules.copy(doubleRestriction = DoubleRestriction.TEN_TO_ELEVEN)))
     }
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {

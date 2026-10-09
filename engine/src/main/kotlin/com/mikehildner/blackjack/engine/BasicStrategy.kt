@@ -19,6 +19,12 @@ enum class ChartCode(val code: String, val primary: Action, val fallback: Action
     SURRENDER_STAND("Rs", Action.SURRENDER, Action.STAND),
     /** Surrender if allowed, otherwise split. */
     SURRENDER_SPLIT("Rp", Action.SURRENDER, Action.SPLIT),
+    /** Free Bet Blackjack: double with house money (hard 9, 10, 11). */
+    FREE_DOUBLE("FD", Action.DOUBLE, Action.HIT),
+    /** Free Bet Blackjack: split with house money (any pair but tens). */
+    FREE_SPLIT("FP", Action.SPLIT, Action.HIT);
+
+    val isFree: Boolean get() = this == FREE_DOUBLE || this == FREE_SPLIT
 }
 
 /** The strategy verdict for a concrete situation, with a plain-English explanation. */
@@ -43,6 +49,8 @@ data class Situation(
     /** True on the first decision for a hand (only then may you double, split or surrender). */
     val twoCards: Boolean,
     val fromSplit: Boolean = false,
+    /** Free Bet Blackjack: the hand is riding on house money only, so a push wins nothing. */
+    val hasFreeBet: Boolean = false,
 ) {
     companion object {
         fun of(hand: Hand, dealerUp: Card) = Situation(
@@ -52,6 +60,7 @@ data class Situation(
             dealerUp = dealerUp.value,
             twoCards = hand.cards.size == 2,
             fromSplit = hand.isFromSplit,
+            hasFreeBet = hand.bet == 0 && hand.freeBet > 0,
         )
     }
 }
@@ -66,8 +75,16 @@ data class Situation(
  */
 object BasicStrategy {
 
-    /** Resolve the chart against what is actually permitted right now. */
+    /**
+     * Resolve the chart against what is actually permitted right now.
+     * Free Bet Blackjack has no fixed chart; its decisions are computed by [FreeBetStrategy].
+     */
     fun recommend(hand: Hand, dealerUp: Card, rules: Rules, available: Set<Action>): Recommendation {
+        if (rules.variant == Variant.FREE_BET) return FreeBetStrategy.recommend(hand, dealerUp, rules, available)
+        return classicRecommend(hand, dealerUp, rules, available)
+    }
+
+    internal fun classicRecommend(hand: Hand, dealerUp: Card, rules: Rules, available: Set<Action>): Recommendation {
         val situation = Situation.of(hand, dealerUp)
         val cell = decide(situation, rules, canSplit = Action.SPLIT in available)
         val action = when {
@@ -174,7 +191,7 @@ object BasicStrategy {
 
     private fun upName(up: Int) = if (up == 11) "an Ace" else "a $up"
 
-    private fun explain(s: Situation, cell: ChartCode, action: Action, rules: Rules): String {
+    internal fun explain(s: Situation, cell: ChartCode, action: Action, rules: Rules): String {
         val up = s.dealerUp
         val weak = up in 2..6
         val core = when {
@@ -249,12 +266,16 @@ object BasicStrategy {
 
     fun columnLabel(up: Int): String = if (up == 11) "A" else up.toString()
 
-    fun chartCell(section: Section, key: Int, dealerUp: Int, rules: Rules): ChartCode {
+    /**
+     * One chart cell. [hasFreeBet] only matters for Free Bet Blackjack, where a
+     * hand riding on house money (always a split hand) plays differently.
+     */
+    fun chartCell(section: Section, key: Int, dealerUp: Int, rules: Rules, hasFreeBet: Boolean = false): ChartCode {
         val situation = when (section) {
             Section.HARD -> Situation(total = key, soft = false, pairOf = null, dealerUp = dealerUp, twoCards = true)
             Section.SOFT -> Situation(total = key, soft = true, pairOf = null, dealerUp = dealerUp, twoCards = true)
             Section.PAIRS -> Situation(total = if (key == 11) 12 else key * 2, soft = key == 11, pairOf = key, dealerUp = dealerUp, twoCards = true)
-        }
-        return decide(situation, rules)
+        }.copy(hasFreeBet = hasFreeBet, fromSplit = hasFreeBet)
+        return if (rules.variant == Variant.FREE_BET) FreeBetStrategy.decide(situation, rules).code else decide(situation, rules)
     }
 }

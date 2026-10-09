@@ -57,6 +57,37 @@ class RulesTest {
     }
 
     @Test
+    fun `free bet house edge matches the published figure`() {
+        val standard = Rules(variant = Variant.FREE_BET, dealerHitsSoft17 = true, lateSurrender = false, resplitAces = true)
+        assertClose(1.04, standard.houseEdgePercent, 0.01)
+        assertClose(0.73, standard.copy(dealerHitsSoft17 = false).houseEdgePercent, 0.01)
+        assertClose(2.40, standard.copy(blackjackPayout = Payout.SIX_TO_FIVE).houseEdgePercent, 0.01)
+        assertTrue(standard.pushOn22 && standard.freeDoubles && standard.freeSplits)
+        assertTrue(!Rules().pushOn22)
+    }
+
+    @Test
+    fun `free bet preset and summary`() {
+        assertEquals("Free Bet 6D H17 DAS 3:2 +ante CSM", Rules.HARD_ROCK_TULSA_FREE_BET.summary())
+        assertEquals(Preset.HARD_ROCK_TULSA_FREE_BET, Preset.matching(Rules.HARD_ROCK_TULSA_FREE_BET))
+        assertEquals(50, Rules.HARD_ROCK_TULSA_FREE_BET.ante, "the ante still applies")
+    }
+
+    @Test
+    fun `free double and split eligibility`() {
+        val fb = Rules.HARD_ROCK_TULSA_FREE_BET
+        assertTrue(fb.isFreeDouble(Hand.of(100, "6h", "5c")))
+        assertTrue(fb.isFreeDouble(Hand.of(100, "4h", "5c")))
+        assertTrue(!fb.isFreeDouble(Hand.of(100, "Ah", "8c")), "soft 9 is not free")
+        assertTrue(!fb.isFreeDouble(Hand.of(100, "2h", "3c", "6d")), "three cards are not free")
+        assertTrue(!fb.isFreeDouble(Hand.of(100, "6h", "6c")), "hard 12 is not free")
+        assertTrue(fb.isFreeSplit(Hand.of(100, "8h", "8c")))
+        assertTrue(fb.isFreeSplit(Hand.of(100, "Ah", "Ac")))
+        assertTrue(!fb.isFreeSplit(Hand.of(100, "Kh", "Qc")), "tens are never free")
+        assertTrue(!Rules().isFreeDouble(Hand.of(100, "6h", "5c")), "classic has no free bets")
+    }
+
+    @Test
     fun `default limits are in cents`() {
         assertEquals(500, Rules().minBet)
         assertEquals(50_000, Rules().maxBet)

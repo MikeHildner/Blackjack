@@ -10,13 +10,22 @@ package com.mikehildner.blackjack.engine
  */
 data class Hand(
     val cards: List<Card>,
+    /** Real money at risk. */
     val bet: Int,
     val isDoubled: Boolean = false,
     val isFromSplit: Boolean = false,
     val isFromSplitAces: Boolean = false,
     val isSurrendered: Boolean = false,
     val isStood: Boolean = false,
+    /**
+     * Free Bet Blackjack: money the house put up for a free double or free
+     * split. Paid out on a win, simply removed on a loss or push.
+     */
+    val freeBet: Int = 0,
 ) {
+    /** The stake this hand is playing for: what a double adds, what a split hand inherits. */
+    val wager: Int get() = bet + freeBet
+
     /** Total counting every ace as 1. */
     val hardTotal: Int = cards.sumOf { if (it.isAce) 1 else it.value }
 
