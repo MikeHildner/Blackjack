@@ -88,6 +88,29 @@ These are the standard published adjustments (see Wizard of Odds, Schlesinger's
 *Blackjack Attack*). `Rules.houseEdgePercent` adds them up from a baseline of 0.43%
 for an eight-deck S17 DAS game.
 
+## 4a. The Oklahoma ante
+
+Oklahoma tribal casinos charge a flat fee per hand, typically 50 cents on bets up to $50 and $1
+above. It is paid when the bet is placed and never returned. Because it is flat, its cost as a
+share of the bet is
+
+    effective edge = rule edge + 100 × ante / bet
+
+| Bet | Ante | Ante as % of bet | Total with a 0.6% rule edge |
+|-----|------|------------------|-----------------------------|
+| $5 | $0.50 | 10.0% | 10.6% |
+| $10 | $0.50 | 5.0% | 5.6% |
+| $25 | $0.50 | 2.0% | 2.6% |
+| $50 | $0.50 | 1.0% | 1.6% |
+| $100 | $1.00 | 1.0% | 1.6% |
+
+`Rules.effectiveHouseEdgePercent(bet)` implements this. The ante also undermines card counting,
+because a counter's small waiting bets are the ones the fee hits hardest.
+
+A **continuous shuffling machine** (`Rules.continuousShuffle`) returns every card to the shoe
+after each round. It does not change basic strategy or the rule edge, but it makes the running
+count meaningless; the app resets the count every hand and says so.
+
 ## 5. Card counting
 
 Hi-Lo tags 2–6 as +1, 7–9 as 0, tens and aces as −1. A deck sums to zero, so a

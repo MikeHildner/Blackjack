@@ -77,6 +77,10 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
 
     val trueCount: Double get() = counter.trueCount(decksRemaining)
 
+    /** Bet within limits and bankroll covering both the bet and the ante. */
+    val canDeal: Boolean
+        get() = round.phase == Phase.BETTING && bet in rules.minBet..rules.maxBet && bet + rules.anteFor(bet) <= bankroll
+
     init {
         refresh()
     }
@@ -114,7 +118,9 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
     // --------------------------------------------------------------- actions
 
     fun changeBet(amount: Int) {
-        val cap = min(rules.maxBet, bankroll)
+        // The ante has to be paid alongside the bet, so it shrinks what you can put down.
+        val affordable = bankroll - rules.anteFor(amount)
+        val cap = min(rules.maxBet, affordable)
         bet = amount.coerceIn(min(rules.minBet, cap), cap).coerceAtLeast(0)
         prefs.lastBet = bet
     }

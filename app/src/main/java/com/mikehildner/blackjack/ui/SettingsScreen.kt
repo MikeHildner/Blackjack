@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -36,6 +37,7 @@ import com.mikehildner.blackjack.CoachMode
 import com.mikehildner.blackjack.engine.DoubleRestriction
 import com.mikehildner.blackjack.engine.Payout
 import com.mikehildner.blackjack.engine.Phase
+import com.mikehildner.blackjack.engine.Preset
 import com.mikehildner.blackjack.engine.Rules
 import com.mikehildner.blackjack.ui.theme.Gold
 import java.util.Locale
@@ -86,13 +88,24 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
 
         SectionHeader("Table rules")
         Text(
-            "${rules.summary()}  ·  house edge about ${String.format(Locale.US, "%.2f", rules.houseEdgePercent)}%",
+            "${rules.summary()}  ·  house edge about ${String.format(Locale.US, "%.2f", rules.houseEdgePercent)}%" +
+                if (rules.ante > 0) "  ·  ${String.format(Locale.US, "%.1f", rules.effectiveHouseEdgePercent(vm.bet))}% at your ${money(vm.bet)} bet" else "",
             color = Gold,
             fontSize = 13.sp,
         )
         if (vm.round.phase != Phase.BETTING) {
             Text("Rule changes take effect when the current hand is over.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+
+        val preset = Preset.matching(rules)
+        ChipRow("Preset", Preset.entries.map { it.label to it } + ("Custom" to null), preset) { chosen ->
+            if (chosen != null) update(chosen.rules)
+        }
+        Text(
+            preset?.description ?: "Custom rules. Pick a preset to jump back to a known table.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         ChipRow("Decks", listOf(1, 2, 4, 6, 8).map { it.toString() to it }, rules.decks) { update(rules.copy(decks = it)) }
         SwitchRow("Dealer hits soft 17 (H17)", "Worse for you by about 0.22%.", rules.dealerHitsSoft17) { update(rules.copy(dealerHitsSoft17 = it)) }
@@ -111,10 +124,35 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             onValueChange = { update(rules.copy(penetration = (Math.round(it * 20) / 20.0).coerceIn(0.5, 0.95))) },
             valueRange = 0.5f..0.95f,
             steps = 8,
+            enabled = !rules.continuousShuffle,
         )
+        SwitchRow(
+            "Continuous shuffler",
+            "Cards go back into the machine after every hand. Normal for low-limit tables; it makes counting useless.",
+            rules.continuousShuffle,
+        ) { update(rules.copy(continuousShuffle = it)) }
+
+        SectionHeader("Per-hand ante")
+        Text(
+            "Oklahoma tribal casinos charge a fee on every hand, win or lose. At a $5 table a 50 cent ante is 10% of the bet, " +
+                "twenty times the house edge of the game itself.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ChipRow("Ante per hand", listOf(0, 25, 50, 100).map { money(it) to it }, rules.ante) {
+            update(rules.copy(ante = it, anteAboveThreshold = if (it == 0) 0 else maxOf(it, rules.anteAboveThreshold)))
+        }
+        if (rules.ante > 0) {
+            ChipRow("Ante on bets over ${money(rules.anteThreshold)}", listOf(50, 100, 200).map { money(it) to it }, rules.anteAboveThreshold) {
+                update(rules.copy(anteAboveThreshold = it))
+            }
+            ChipRow("Threshold", listOf(2_500, 5_000, 10_000).map { money(it) to it }, rules.anteThreshold) {
+                update(rules.copy(anteThreshold = it))
+            }
+        }
 
         SectionHeader("Bankroll")
-        ChipRow("Starting chips", listOf(500, 1000, 5000).map { money(it) to it }, s.startingBankroll) { vm.updateSettings(s.copy(startingBankroll = it)) }
+        ChipRow("Starting chips", listOf(50_000, 100_000, 500_000).map { money(it) to it }, s.startingBankroll) { vm.updateSettings(s.copy(startingBankroll = it)) }
         Text(
             "Lifetime: ${vm.stats.hands} hands, ${vm.stats.decisions} decisions, ${vm.stats.accuracyPercent}% matched basic strategy, net ${signedMoney(vm.stats.net)}.",
             fontSize = 13.sp,
@@ -169,7 +207,8 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
 private fun <T> ChipRow(title: String, options: List<Pair<String, T>>, selected: T, onSelect: (T) -> Unit) {
     Column(Modifier.padding(vertical = 4.dp)) {
         Text(title)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Scrolls sideways so long option lists never get squeezed off the screen.
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEach { (label, value) ->
                 FilterChip(selected = selected == value, onClick = { onSelect(value) }, label = { Text(label) })
             }

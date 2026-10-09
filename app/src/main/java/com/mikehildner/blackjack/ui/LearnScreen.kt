@@ -106,6 +106,18 @@ private val Topics = listOf(
         """.trimIndent(),
     ),
     Topic(
+        "The per-hand ante (Oklahoma)",
+        """
+        Oklahoma tribal casinos charge a fee on every blackjack hand, typically 50 cents, rising to a dollar on larger bets. You pay it when you bet and never see it again, whether you win, lose, push or draw a blackjack. Hard Rock Tulsa charges it; some casinos in the north-east corner of the state waive it if you use a players card.
+
+        It sounds small. It is not. The house edge of the game itself is about half a percent of your bet. A 50 cent ante on a $5 bet is 10% of your bet. On $10 it is 5%, on $25 it is 2%, and only at $50 does it fall to 1%, where the ante doubles. At a $10 table you lose about 55 cents a hand on average, 50 of them to the ante. Over 70 hands an hour that is roughly $35 an hour before the cards do anything.
+
+        The same arithmetic ruins card counting. A counter wants to bet the minimum while the count is bad and only bet big when it is good. The ante punishes exactly those small waiting bets, so most of the edge the count would have given you goes to the fee.
+
+        If you must play an ante table, bet more per hand and fewer hands, and prefer a casino that waives the fee for rated play. Set the ante in Settings and the table will show the true cost at your bet size.
+        """.trimIndent(),
+    ),
+    Topic(
         "Card counting is legal and mostly arithmetic",
         """
         Counting cards means tracking whether the remaining shoe is rich or poor in high cards. It is not illegal anywhere; casinos can simply ask you to leave.
@@ -113,6 +125,8 @@ private val Topics = listOf(
         Hi-Lo assigns +1 to 2-6, 0 to 7-9 and -1 to tens and Aces. Keep a running total as cards appear. Divide by the decks still to be dealt to get the true count. Each true count point is worth about half a percent to you, so at a true count of +2 a half-percent house edge has flipped to a half-percent player edge.
 
         The money comes from betting more when the count is high and the minimum when it is not. Playing deviations (like taking insurance at +3) add a little more.
+
+        Two things kill counting outright. A continuous shuffling machine feeds every played card straight back into the shoe, so the composition never drifts and the count never means anything; low-limit tables often use one. And a per-hand ante taxes the small bets you make while waiting for a good count. Look for a shoe with a cut card, deep penetration and no fee.
 
         Realistically, the edge is small (around 1%), the variance is large, and you need a bankroll of hundreds of bets to survive the swings. The Count tab lets you practise the skill without any of the risk.
         """.trimIndent(),
@@ -130,6 +144,8 @@ private val Topics = listOf(
         Shoe: the box holding several shuffled decks.
         Cut card: a plastic card marking where the shoe will be reshuffled.
         Penetration: how deep into the shoe the cut card sits. Deeper is better for counters.
+        CSM: continuous shuffling machine. Played cards go straight back in; the count never develops.
+        Ante: a per-hand fee charged by Oklahoma casinos, paid whether you win or lose.
         S17 / H17: the dealer stands / hits on soft 17.
         DAS: doubling after a split is allowed.
         Late surrender: give up half your bet after the dealer checks for blackjack.
@@ -213,6 +229,23 @@ private fun HouseEdgeCard(rules: Rules) {
                         color = if (d > 0) Bad else Good,
                     )
                 }
+            }
+            if (rules.ante > 0) {
+                Text("What the ${money(rules.ante)} ante costs on top, by bet size:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+                listOf(500, 1_000, 2_500, 5_000, 10_000).forEach { bet ->
+                    val total = rules.effectiveHouseEdgePercent(bet)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${money(bet)} bet (ante ${money(rules.anteFor(bet))})", fontSize = 14.sp)
+                        Text(
+                            String.format(Locale.US, "%.1f%% total", total),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (total > 2.0) Bad else Good,
+                        )
+                    }
+                }
+            } else {
+                Text("No ante at this table. Oklahoma casinos add a per-hand fee that dwarfs every line above; see the ante topic below.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text("Estimates from the standard rule-adjustment tables; exact figures vary slightly with the full rule set.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -50,9 +50,17 @@ import com.mikehildner.blackjack.ui.theme.Good
 import java.util.Locale
 import kotlin.math.roundToInt
 
-fun money(amount: Int): String = (if (amount < 0) "-$" else "$") + String.format(Locale.US, "%,d", kotlin.math.abs(amount))
-fun signedMoney(amount: Int): String = (if (amount >= 0) "+" else "-") + "$" + String.format(Locale.US, "%,d", kotlin.math.abs(amount))
+/** Cents to "$1,000", or "$9.50" when there are cents to show. */
+private fun dollars(cents: Int): String {
+    val abs = kotlin.math.abs(cents)
+    return if (abs % 100 == 0) String.format(Locale.US, "$%,d", abs / 100)
+    else String.format(Locale.US, "$%,d.%02d", abs / 100, abs % 100)
+}
+
+fun money(cents: Int): String = (if (cents < 0) "-" else "") + dollars(cents)
+fun signedMoney(cents: Int): String = (if (cents >= 0) "+" else "-") + dollars(cents)
 fun pct(p: Double): String = "${(p * 100).roundToInt()}%"
+fun pct1(percent: Double): String = String.format(Locale.US, "%.1f%%", percent)
 fun ev(v: Double): String = String.format(Locale.US, "%+.2f", v)
 
 /** The game screen: dealer, hands, coaching panels and the controls. */
@@ -72,7 +80,9 @@ fun TableScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             PlayerArea(round)
             Spacer(Modifier.height(12.dp))
             if (round.phase == Phase.SETTLED) ResultBanner(round)
-            if (vm.justShuffled && round.phase == Phase.BETTING) Notice("Fresh shoe: ${vm.rules.decks} deck${if (vm.rules.decks > 1) "s" else ""} shuffled, count reset to 0.")
+            if (vm.justShuffled && round.phase == Phase.BETTING && !vm.rules.continuousShuffle) {
+                Notice("Fresh shoe: ${vm.rules.decks} deck${if (vm.rules.decks > 1) "s" else ""} shuffled, count reset to 0.")
+            }
             vm.pendingRules?.let { Notice("New table rules take effect on the next hand.") }
             CoachPanel(vm)
             if (vm.settings.showOdds) OddsPanel(vm)
@@ -95,7 +105,8 @@ private fun StatusRow(vm: BlackjackViewModel) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         StatusItem("Bankroll", money(vm.bankroll), if (vm.bankroll >= vm.settings.startingBankroll) Good else Bad)
-        StatusItem("Shoe", String.format(Locale.US, "%.1f decks", vm.decksRemaining))
+        if (vm.rules.continuousShuffle) StatusItem("Shoe", "CSM ${vm.rules.decks}D")
+        else StatusItem("Shoe", String.format(Locale.US, "%.1f decks", vm.decksRemaining))
         StatusItem("Strategy", "${vm.stats.accuracyPercent}%", if (vm.stats.accuracyPercent >= 90) Good else Gold)
         StatusItem("Hands", vm.stats.hands.toString())
     }
@@ -183,7 +194,8 @@ private fun HandRow(hand: Hand, active: Boolean, result: HandResult?, index: Int
 
 @Composable
 private fun ResultBanner(round: RoundState) {
-    val net = round.netResult
+    // The headline is about the cards; the ante gets its own line so it is never hidden inside a "win".
+    val net = round.handsNet
     val text = when {
         round.results.size == 1 && round.results[0].outcome == Outcome.BLACKJACK && round.insuranceNet == 0 -> "Blackjack! You win ${money(net)}"
         net > 0 -> "You win ${money(net)}"
@@ -205,6 +217,15 @@ private fun ResultBanner(round: RoundState) {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (round.ante > 0) {
+        Text(
+            "Ante ${money(round.ante)} kept by the house (net ${signedMoney(round.netResult)})",
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+            color = Bad,
+            fontSize = 13.sp,
         )
     }
 }
@@ -322,12 +343,28 @@ private fun CountPanel(vm: BlackjackViewModel) {
             Text("True ${CountTracker.format(tc)}", fontWeight = FontWeight.Bold)
             Text(String.format(Locale.US, "%.1f decks left", vm.decksRemaining))
         }
-        val units = (kotlin.math.floor(tc).toInt() - 1).coerceIn(1, 8)
-        Text(
-            "Suggested bet: $units unit${if (units > 1) "s" else ""} (${money(units * vm.rules.minBet)}). " +
-                if (tc >= 2) "The shoe favours you: bet more." else "No edge yet: bet the minimum.",
-            fontSize = 13.sp,
-        )
+        if (vm.rules.continuousShuffle) {
+            Text(
+                "Continuous shuffler: every card goes straight back in, so the count resets each hand and cannot help you. " +
+                    "Counters avoid these tables.",
+                fontSize = 13.sp,
+                color = Bad,
+            )
+        } else {
+            val units = (kotlin.math.floor(tc).toInt() - 1).coerceIn(1, 8)
+            Text(
+                "Suggested bet: $units unit${if (units > 1) "s" else ""} (${money(units * vm.rules.minBet)}). " +
+                    if (tc >= 2) "The shoe favours you: bet more." else "No edge yet: bet the minimum.",
+                fontSize = 13.sp,
+            )
+            if (vm.rules.ante > 0) {
+                Text(
+                    "With a ${money(vm.rules.ante)} ante the fee is largest exactly when you want to bet small, which eats most of a counter's edge.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -365,12 +402,22 @@ private fun BettingControls(vm: BlackjackViewModel) {
         Text("Table ${money(rules.minBet)} to ${money(rules.maxBet)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(5, 25, 100).forEach { chip ->
-            OutlinedButton(onClick = { vm.changeBet(vm.bet + chip) }, modifier = Modifier.weight(1f)) { Text("+$chip") }
+        listOf(500, 2_500, 10_000).forEach { chip ->
+            OutlinedButton(onClick = { vm.changeBet(vm.bet + chip) }, modifier = Modifier.weight(1f)) { Text("+${chip / 100}") }
         }
         OutlinedButton(onClick = { vm.changeBet(rules.minBet) }, modifier = Modifier.weight(1f)) { Text("Min") }
     }
-    Button(onClick = vm::deal, modifier = Modifier.fillMaxWidth(), enabled = vm.bet in rules.minBet..vm.bankroll) {
+    val ante = rules.anteFor(vm.bet)
+    if (ante > 0) {
+        val edge = rules.effectiveHouseEdgePercent(vm.bet)
+        Text(
+            "Ante ${money(ante)} per hand, win or lose. House edge at this bet: ${pct1(edge)} " +
+                "(${pct1(rules.houseEdgePercent)} from the rules, the rest is the ante).",
+            fontSize = 12.sp,
+            color = if (edge > 2.0) Bad else Gold,
+        )
+    }
+    Button(onClick = vm::deal, modifier = Modifier.fillMaxWidth(), enabled = vm.canDeal) {
         Text("Deal", fontSize = 18.sp)
     }
 }

@@ -19,7 +19,8 @@ data class AppSettings(
     val coachMode: CoachMode = CoachMode.FEEDBACK,
     val showOdds: Boolean = true,
     val showCount: Boolean = false,
-    val startingBankroll: Int = 1000,
+    /** In cents, like every other amount. */
+    val startingBankroll: Int = 100_000,
     /** Card deal and flip animations. Off makes everything instant. */
     val animations: Boolean = true,
 )
@@ -41,6 +42,24 @@ data class Stats(
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("blackjack", Context.MODE_PRIVATE)
 
+    init {
+        migrateToCents()
+    }
+
+    /**
+     * Version 0.1 stored whole dollars. Everything is cents now so the ante can
+     * be 50 cents. Runs once, then leaves a marker.
+     */
+    private fun migrateToCents() {
+        if (sp.getBoolean("moneyUnitCents", false)) return
+        sp.edit {
+            for (key in listOf("bankroll", "lastBet", "stats.net", "startingBankroll")) {
+                if (sp.contains(key)) putInt(key, sp.getInt(key, 0) * 100)
+            }
+            putBoolean("moneyUnitCents", true)
+        }
+    }
+
     fun loadSettings(): AppSettings {
         val d = Rules()
         val rules = Rules(
@@ -55,13 +74,17 @@ class Prefs(context: Context) {
             hitSplitAces = sp.getBoolean("hsa", d.hitSplitAces),
             dealerPeeks = sp.getBoolean("peek", d.dealerPeeks),
             penetration = sp.getFloat("penetration", d.penetration.toFloat()).toDouble(),
+            ante = sp.getInt("ante", d.ante),
+            anteAboveThreshold = sp.getInt("anteAbove", d.anteAboveThreshold),
+            anteThreshold = sp.getInt("anteThreshold", d.anteThreshold),
+            continuousShuffle = sp.getBoolean("csm", d.continuousShuffle),
         )
         return AppSettings(
             rules = rules,
             coachMode = enumOr("coachMode", CoachMode.FEEDBACK),
             showOdds = sp.getBoolean("showOdds", true),
             showCount = sp.getBoolean("showCount", false),
-            startingBankroll = sp.getInt("startingBankroll", 1000),
+            startingBankroll = sp.getInt("startingBankroll", 100_000),
             animations = sp.getBoolean("animations", true),
         )
     }
@@ -79,6 +102,10 @@ class Prefs(context: Context) {
         putBoolean("hsa", r.hitSplitAces)
         putBoolean("peek", r.dealerPeeks)
         putFloat("penetration", r.penetration.toFloat())
+        putInt("ante", r.ante)
+        putInt("anteAbove", r.anteAboveThreshold)
+        putInt("anteThreshold", r.anteThreshold)
+        putBoolean("csm", r.continuousShuffle)
         putString("coachMode", s.coachMode.name)
         putBoolean("showOdds", s.showOdds)
         putBoolean("showCount", s.showCount)
@@ -92,7 +119,7 @@ class Prefs(context: Context) {
         set(value) = sp.edit { if (value == null) remove("bankroll") else putInt("bankroll", value) }
 
     var lastBet: Int
-        get() = sp.getInt("lastBet", 10)
+        get() = sp.getInt("lastBet", 1_000)
         set(value) = sp.edit { putInt("lastBet", value) }
 
     fun loadStats() = Stats(

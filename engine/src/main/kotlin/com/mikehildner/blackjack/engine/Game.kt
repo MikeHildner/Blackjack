@@ -39,6 +39,8 @@ data class RoundState(
     val results: List<HandResult> = emptyList(),
     /** Net result of the insurance side bet, if any. */
     val insuranceNet: Int = 0,
+    /** Per-hand fee paid when the bet was placed. Never comes back. */
+    val ante: Int = 0,
 ) {
     val dealerUpCard: Card? get() = dealerCards.firstOrNull()
 
@@ -50,8 +52,11 @@ data class RoundState(
 
     val currentHand: Hand? get() = hands.getOrNull(activeHand).takeIf { phase == Phase.PLAYER_TURN }
 
-    /** Total net change to the bankroll from this round, once settled. */
-    val netResult: Int get() = results.sumOf { it.net } + insuranceNet
+    /** Net result of the hands and insurance, before the ante. */
+    val handsNet: Int get() = results.sumOf { it.net } + insuranceNet
+
+    /** Total net change to the bankroll from this round, once settled, ante included. */
+    val netResult: Int get() = handsNet - ante
 }
 
 /**
@@ -83,12 +88,14 @@ class Game(
 
     // ---------------------------------------------------------------- betting
 
+    /** The bet plus the ante must both be covered. */
     fun canBet(amount: Int): Boolean =
-        state.phase == Phase.BETTING && amount in rules.minBet..rules.maxBet && amount <= bankroll
+        state.phase == Phase.BETTING && amount in rules.minBet..rules.maxBet && amount + rules.anteFor(amount) <= bankroll
 
     fun placeBet(amount: Int) {
         require(canBet(amount)) { "Cannot bet $amount" }
-        bankroll -= amount
+        val ante = rules.anteFor(amount)
+        bankroll -= amount + ante
 
         val first = drawVisible()
         val up = drawVisible()
@@ -101,6 +108,7 @@ class Game(
             hands = listOf(player),
             dealerCards = listOf(up, hole),
             holeCardHidden = true,
+            ante = ante,
         )
 
         if (up.isAce) {
@@ -272,11 +280,14 @@ class Game(
 
     // ------------------------------------------------------------- next round
 
-    /** Clears the table. Returns true if the shoe was reshuffled. */
+    /**
+     * Clears the table. Returns true if the shoe was reshuffled, which happens
+     * past the cut card, or after every round with a continuous shuffler.
+     */
     fun nextRound(): Boolean {
         check(state.phase == Phase.SETTLED)
         state = RoundState()
-        if (shoe.cutCardReached) {
+        if (rules.continuousShuffle || shoe.cutCardReached) {
             shoe.shuffle()
             return true
         }

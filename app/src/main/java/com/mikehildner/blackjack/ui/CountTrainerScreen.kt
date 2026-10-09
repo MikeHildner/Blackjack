@@ -107,6 +107,13 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                     Text("True ${CountTracker.format(vm.trueCount)}", fontWeight = FontWeight.Bold)
                     Text("${vm.cardsSeen} cards seen")
                 }
+                if (vm.rules.continuousShuffle) {
+                    Text(
+                        "Your table uses a continuous shuffler, so this count resets every hand. Practise here, but it will not pay at that table.",
+                        fontSize = 13.sp,
+                        color = Bad,
+                    )
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Show the count on the table screen")
                     Switch(checked = vm.settings.showCount, onCheckedChange = { vm.updateSettings(vm.settings.copy(showCount = it)) })
