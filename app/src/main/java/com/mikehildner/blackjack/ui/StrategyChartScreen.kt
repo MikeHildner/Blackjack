@@ -82,7 +82,7 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     // Free Bet cells are computed from EV; cache the whole grid per rules so scrolling stays smooth.
     val cells = remember(rules, showFreeBetHand) {
         BasicStrategy.Section.entries.associateWith { section ->
-            BasicStrategy.rows(section).associateWith { row ->
+            BasicStrategy.rows(section, rules.variant).associateWith { row ->
                 BasicStrategy.dealerColumns.associateWith { up -> BasicStrategy.chartCell(section, row, up, rules, showFreeBetHand) }
             }
         }
@@ -117,17 +117,17 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
         }
         Legend(freeBetGame)
         BasicStrategy.Section.entries.forEach { section ->
-            ChartTable(section, cells.getValue(section), highlight = current?.let { chartPosition(it) })
+            ChartTable(section, cells.getValue(section), rules.variant, highlight = current?.let { chartPosition(it, rules.variant) })
         }
         Spacer(Modifier.height(8.dp))
     }
 }
 
 /** Which (section, row) a live situation lands on. */
-private fun chartPosition(s: Situation): Triple<BasicStrategy.Section, Int, Int> = when {
+private fun chartPosition(s: Situation, variant: Variant): Triple<BasicStrategy.Section, Int, Int> = when {
     s.pairOf != null && s.twoCards -> Triple(BasicStrategy.Section.PAIRS, s.pairOf!!, s.dealerUp)
     s.soft -> Triple(BasicStrategy.Section.SOFT, s.total.coerceIn(13, 20), s.dealerUp)
-    else -> Triple(BasicStrategy.Section.HARD, s.total.coerceIn(5, 17), s.dealerUp)
+    else -> Triple(BasicStrategy.Section.HARD, s.total.coerceIn(5, BasicStrategy.rows(BasicStrategy.Section.HARD, variant).last()), s.dealerUp)
 }
 
 @Composable
@@ -166,7 +166,7 @@ private fun LegendItem(text: String, color: Color) {
 }
 
 @Composable
-private fun ChartTable(section: BasicStrategy.Section, cells: Map<Int, Map<Int, ChartCode>>, highlight: Triple<BasicStrategy.Section, Int, Int>?) {
+private fun ChartTable(section: BasicStrategy.Section, cells: Map<Int, Map<Int, ChartCode>>, variant: Variant, highlight: Triple<BasicStrategy.Section, Int, Int>?) {
     val labelWidth = 40.dp
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(section.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
@@ -178,10 +178,10 @@ private fun ChartTable(section: BasicStrategy.Section, cells: Map<Int, Map<Int, 
                 }
             }
         }
-        BasicStrategy.rows(section).forEach { row ->
+        BasicStrategy.rows(section, variant).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(labelWidth), contentAlignment = Alignment.Center) {
-                    Text(BasicStrategy.rowLabel(section, row), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(BasicStrategy.rowLabel(section, row, variant), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 BasicStrategy.dealerColumns.forEach { up ->
                     val code = cells.getValue(row).getValue(up)

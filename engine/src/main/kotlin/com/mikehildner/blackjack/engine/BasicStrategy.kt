@@ -249,15 +249,19 @@ object BasicStrategy {
 
     enum class Section(val title: String) { HARD("Hard totals"), SOFT("Soft totals"), PAIRS("Pairs") }
 
-    /** Row keys for each chart section: hard 5..17, soft 13..20 (A2..A9), pairs 2..11. */
-    fun rows(section: Section): List<Int> = when (section) {
-        Section.HARD -> (5..17).toList()
+    /**
+     * Row keys for each chart section: hard 5..17 ("17+" always stands in classic
+     * play), soft 13..20 (A2..A9), pairs 2..11. Free Bet hands riding on house
+     * money can correctly hit a hard 17 or 18, so that variant shows hard 5..20.
+     */
+    fun rows(section: Section, variant: Variant = Variant.CLASSIC): List<Int> = when (section) {
+        Section.HARD -> if (variant == Variant.FREE_BET) (5..20).toList() else (5..17).toList()
         Section.SOFT -> (13..20).toList()
         Section.PAIRS -> (2..11).toList()
     }
 
-    fun rowLabel(section: Section, key: Int): String = when (section) {
-        Section.HARD -> if (key == 17) "17+" else key.toString()
+    fun rowLabel(section: Section, key: Int, variant: Variant = Variant.CLASSIC): String = when (section) {
+        Section.HARD -> if (key == 17 && variant == Variant.CLASSIC) "17+" else key.toString()
         Section.SOFT -> "A," + (key - 11)
         Section.PAIRS -> if (key == 11) "A,A" else "$key,$key"
     }
