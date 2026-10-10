@@ -66,6 +66,7 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     var showValues by rememberSaveable { mutableStateOf(true) }
     var drill by remember { mutableStateOf<Drill?>(null) }
     var answer by rememberSaveable { mutableStateOf("") }
+    var negative by rememberSaveable { mutableStateOf(false) }
     var result by remember { mutableStateOf<Pair<Int, Int>?>(null) } // your answer to the real count
 
     val speedMs = Speeds[speedIndex].second
@@ -77,15 +78,21 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    // While a drill runs, the primer and settings are hidden so the card is at the top of the screen
+    // from the first frame; scrolling to it at "Pro" speed is not realistic.
+    val scrollState = rememberScrollState()
+    LaunchedEffect(drill == null) { scrollState.scrollTo(0) }
+
     Column(
         modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Card counting", style = MaterialTheme.typography.headlineSmall)
 
+        if (drill == null) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Hi-Lo in one breath", style = MaterialTheme.typography.titleMedium)
@@ -138,6 +145,13 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             Text("Show each card's Hi-Lo value")
             Switch(checked = showValues, onCheckedChange = { showValues = it })
         }
+        } else {
+            Text(
+                "${if (size == 52) "Full deck" else "$size cards"} at ${Speeds[speedIndex].first.lowercase()} speed",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         val d = drill
         when {
@@ -146,6 +160,7 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                     val shoe = Shoe(1)
                     drill = Drill(List(size) { shoe.draw() })
                     answer = ""
+                    negative = false
                     result = null
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -174,21 +189,30 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             else -> {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("What is the running count?", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = answer,
-                        onValueChange = { answer = it.filter { c -> c.isDigit() || c == '-' || c == '+' } },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = result == null,
-                    )
+                    // Number keyboards on many phones have no minus key, so the sign is a separate toggle.
+                    val magnitude = answer.toIntOrNull()
+                    val value = magnitude?.let { if (negative) -it else it }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = !negative, onClick = { negative = false }, label = { Text("+", fontSize = 20.sp) }, enabled = result == null)
+                        FilterChip(selected = negative, onClick = { negative = true }, label = { Text("−", fontSize = 20.sp) }, enabled = result == null)
+                        OutlinedTextField(
+                            value = answer,
+                            onValueChange = { answer = it.filter { c -> c.isDigit() }.take(3) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            enabled = result == null,
+                            prefix = { Text(if (negative) "−" else "+") },
+                            placeholder = { Text("0") },
+                        )
+                    }
                     val r = result
                     if (r == null) {
                         Button(
-                            onClick = { answer.removePrefix("+").toIntOrNull()?.let { result = it to d.answer } },
-                            enabled = answer.removePrefix("+").toIntOrNull() != null,
+                            onClick = { value?.let { result = it to d.answer } },
+                            enabled = value != null,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Check") }
+                        ) { Text(if (value != null) "Check ${signed(value)}" else "Check") }
                     } else {
                         val correct = r.first == r.second
                         Text(
@@ -207,10 +231,12 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                                 val shoe = Shoe(1)
                                 drill = Drill(List(size) { shoe.draw() })
                                 answer = ""
+                                negative = false
                                 result = null
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Again") }
+                        OutlinedButton(onClick = { drill = null }, modifier = Modifier.fillMaxWidth()) { Text("Back to settings") }
                     }
                 }
             }
