@@ -63,7 +63,8 @@ private data class Drill(val cards: List<Card>, val index: Int = 0) {
 fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     var speedIndex by rememberSaveable { mutableIntStateOf(1) }
     var size by rememberSaveable { mutableIntStateOf(26) }
-    var showValues by rememberSaveable { mutableStateOf(true) }
+    // Off by default: at a real table nobody shows you the value, and the point is to practise that.
+    var showValues by rememberSaveable { mutableStateOf(false) }
     var drill by remember { mutableStateOf<Drill?>(null) }
     var answer by rememberSaveable { mutableStateOf("") }
     var negative by rememberSaveable { mutableStateOf(false) }
@@ -142,7 +143,10 @@ fun CountTrainerScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Show each card's Hi-Lo value")
+            Column(Modifier.weight(1f)) {
+                Text("Training wheels: show each card's value")
+                Text("Flashes +1, 0 or -1 under the card. Useful the first few times, then turn it off.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Switch(checked = showValues, onCheckedChange = { showValues = it })
         }
         } else {
