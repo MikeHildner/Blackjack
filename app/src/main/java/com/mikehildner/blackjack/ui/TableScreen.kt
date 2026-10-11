@@ -139,8 +139,9 @@ private fun DealerArea(round: RoundState, pushOn22: Boolean) {
         }
         Spacer(Modifier.height(6.dp))
         if (round.dealerCards.isEmpty()) {
+            // During a staged deal the dealer has no card yet for a moment; keep the space, drop the prompt.
             Box(Modifier.height(80.dp), contentAlignment = Alignment.Center) {
-                Text("Place your bet to deal", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (round.phase == Phase.BETTING) Text("Place your bet to deal", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             CardFan(round.dealerCards, hiddenIndex = if (round.holeCardHidden) 1 else -1, fromTop = true)

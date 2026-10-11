@@ -10,7 +10,7 @@ Play money only. There is nothing to buy and nothing phones home.
 
 | Tab | What you get |
 |-----|--------------|
-| **Table** | A full game: bet, hit, stand, double, split, surrender, insurance. Configurable casino rules. |
+| **Table** | A full game: bet, hit, stand, double, split, surrender, insurance. Cards are dealt one at a time in real order, and the dealer plays out draw by draw. Configurable casino rules. |
 | **Coach** (on the table) | Grades every decision against basic strategy and explains *why* in plain English. Or shows the right play before you act. |
 | **Live odds** (on the table) | Your bust chance, the dealer bust chance, and the expected value of every available action, computed from the cards actually left in the shoe. |
 | **Chart** | The complete basic strategy chart for the rules you chose. The cell for your current hand is highlighted while you play. |

@@ -83,7 +83,7 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
         SwitchRow("Card count", "Show the Hi-Lo running and true count on the table.", s.showCount) {
             vm.updateSettings(s.copy(showCount = it))
         }
-        SwitchRow("Reduce animations", "Deal and flip cards instantly instead of animating them.", !s.animations) {
+        SwitchRow("Reduce animations", "Deal all cards at once and flip instantly, instead of one card at a time.", !s.animations) {
             vm.updateSettings(s.copy(animations = !it))
         }
 
