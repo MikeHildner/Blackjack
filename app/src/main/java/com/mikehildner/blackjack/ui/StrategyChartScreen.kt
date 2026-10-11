@@ -21,6 +21,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,7 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,7 +74,9 @@ private fun ChartCode.textColor(): Color = when (this) {
 
 /**
  * The full basic strategy chart for the table rules currently in play.
- * If a hand is in progress, the matching cell is outlined in gold.
+ * If a hand is in progress, the matching cell is enlarged and ringed in
+ * white, its row and column are dimmed as a crosshair, and the chart
+ * scrolls to it.
  */
 @Composable
 fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
@@ -88,10 +96,26 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    // When a hand is in play, scroll the chart so its cell sits mid-screen. The cell reports its
+    // position within the scrolled content; the effect fires once per new highlight.
+    val scrollState = rememberScrollState()
+    val highlight = current?.let { chartPosition(it, rules.variant) }
+    var viewportTop by remember { mutableStateOf(0f) }
+    var viewportHeight by remember { mutableStateOf(0) }
+    var highlightContentY by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(highlight, highlightContentY) {
+        val y = highlightContentY ?: return@LaunchedEffect
+        if (highlight != null) scrollState.animateScrollTo((y - viewportHeight / 2f).toInt().coerceAtLeast(0))
+    }
+
     Column(
         modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .onGloballyPositioned {
+                viewportTop = it.positionInRoot().y
+                viewportHeight = it.size.height
+            }
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -116,8 +140,18 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             )
         }
         Legend(freeBetGame)
+        if (highlight != null) {
+            Text(
+                "Your hand is outlined in white below.",
+                fontSize = 12.sp,
+                color = Gold,
+            )
+        }
         BasicStrategy.Section.entries.forEach { section ->
-            ChartTable(section, cells.getValue(section), rules.variant, highlight = current?.let { chartPosition(it, rules.variant) })
+            ChartTable(
+                section, cells.getValue(section), rules.variant, highlight,
+                onHighlightPositioned = { rootY -> highlightContentY = rootY - viewportTop + scrollState.value },
+            )
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -166,33 +200,59 @@ private fun LegendItem(text: String, color: Color) {
 }
 
 @Composable
-private fun ChartTable(section: BasicStrategy.Section, cells: Map<Int, Map<Int, ChartCode>>, variant: Variant, highlight: Triple<BasicStrategy.Section, Int, Int>?) {
+private fun ChartTable(
+    section: BasicStrategy.Section,
+    cells: Map<Int, Map<Int, ChartCode>>,
+    variant: Variant,
+    highlight: Triple<BasicStrategy.Section, Int, Int>?,
+    onHighlightPositioned: (Float) -> Unit,
+) {
     val labelWidth = 40.dp
+    val inSection = highlight?.first == section
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(section.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Box(Modifier.width(labelWidth))
             BasicStrategy.dealerColumns.forEach { up ->
+                val hit = inSection && highlight?.third == up
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(BasicStrategy.columnLabel(up), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(BasicStrategy.columnLabel(up), fontSize = if (hit) 14.sp else 12.sp, fontWeight = FontWeight.Bold, color = if (hit) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         BasicStrategy.rows(section, variant).forEach { row ->
+            val rowHit = inSection && highlight?.second == row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(labelWidth), contentAlignment = Alignment.Center) {
-                    Text(BasicStrategy.rowLabel(section, row, variant), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(BasicStrategy.rowLabel(section, row, variant), fontSize = if (rowHit) 14.sp else 12.sp, fontWeight = FontWeight.Bold, color = if (rowHit) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 BasicStrategy.dealerColumns.forEach { up ->
                     val code = cells.getValue(row).getValue(up)
-                    val isHighlight = highlight != null && highlight.first == section && highlight.second == row && highlight.third == up
+                    val isHighlight = rowHit && highlight?.third == up
+                    // Cells in the highlighted row and column are dimmed slightly so the crosshair reads at a glance.
+                    val inCrosshair = inSection && !isHighlight && (rowHit || highlight?.third == up)
                     Box(
                         Modifier
                             .weight(1f)
                             .aspectRatio(1f)
+                            .then(
+                                if (isHighlight) Modifier
+                                    .zIndex(1f)
+                                    .scale(1.25f)
+                                    .shadow(8.dp, RoundedCornerShape(3.dp))
+                                    .onGloballyPositioned { onHighlightPositioned(it.positionInRoot().y + it.size.height / 2f) }
+                                else Modifier,
+                            )
                             .clip(RoundedCornerShape(3.dp))
                             .background(code.color())
-                            .then(if (isHighlight) Modifier.border(3.dp, Gold, RoundedCornerShape(3.dp)) else Modifier),
+                            .then(
+                                when {
+                                    // White ring with a dark inner edge: visible on every cell colour, including amber.
+                                    isHighlight -> Modifier.border(3.dp, Color.White, RoundedCornerShape(3.dp)).padding(3.dp).border(1.dp, Color.Black, RoundedCornerShape(1.dp))
+                                    inCrosshair -> Modifier.background(Color(0x33000000))
+                                    else -> Modifier
+                                },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(code.code, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = code.textColor())
