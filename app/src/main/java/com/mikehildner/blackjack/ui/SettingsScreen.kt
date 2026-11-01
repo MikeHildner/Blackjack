@@ -13,6 +13,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -29,9 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikehildner.blackjack.AppSettings
 import com.mikehildner.blackjack.BlackjackViewModel
 import com.mikehildner.blackjack.CoachMode
 import com.mikehildner.blackjack.engine.DoubleRestriction
@@ -40,6 +44,7 @@ import com.mikehildner.blackjack.engine.Phase
 import com.mikehildner.blackjack.engine.Preset
 import com.mikehildner.blackjack.engine.Rules
 import com.mikehildner.blackjack.engine.Variant
+import com.mikehildner.blackjack.ui.theme.Bad
 import com.mikehildner.blackjack.ui.theme.Gold
 import java.util.Locale
 
@@ -169,7 +174,12 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         var confirmReset by remember { mutableStateOf(false) }
-        OutlinedButton(onClick = { confirmReset = true }, enabled = vm.round.phase == Phase.BETTING || vm.round.phase == Phase.SETTLED) {
+        Button(
+            onClick = { confirmReset = true },
+            enabled = vm.round.phase == Phase.BETTING || vm.round.phase == Phase.SETTLED,
+            colors = ButtonDefaults.buttonColors(containerColor = Bad, contentColor = Color.Black),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text("Reset bankroll and statistics")
         }
         if (confirmReset) {
@@ -179,6 +189,30 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                 text = { Text("Your bankroll returns to ${money(s.startingBankroll)} and the statistics go back to zero.") },
                 confirmButton = { TextButton(onClick = { vm.resetBankroll(); confirmReset = false }) { Text("Reset") } },
                 dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Cancel") } },
+            )
+        }
+
+        SectionHeader("Reset settings")
+        Text(
+            "Puts every setting above back to the defaults: Vegas Strip rules, decision grading on, live odds on, count off, animations on. Bankroll and statistics are not touched.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        var confirmDefaults by remember { mutableStateOf(false) }
+        Button(
+            onClick = { confirmDefaults = true },
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Color.Black),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset settings to defaults")
+        }
+        if (confirmDefaults) {
+            AlertDialog(
+                onDismissRequest = { confirmDefaults = false },
+                title = { Text("Reset settings?") },
+                text = { Text("Table rules go back to the Vegas Strip preset and the teaching options to their defaults. Rule changes apply when the current hand is over.") },
+                confirmButton = { TextButton(onClick = { vm.updateSettings(AppSettings()); confirmDefaults = false }) { Text("Reset") } },
+                dismissButton = { TextButton(onClick = { confirmDefaults = false }) { Text("Cancel") } },
             )
         }
 
