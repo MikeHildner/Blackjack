@@ -18,7 +18,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -192,15 +191,21 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        SectionHeader("Practice record")
         vm.weakSpotsVersion // recompose when the record changes
         Text(
-            "Practice record: ${vm.weakSpots.totalAttempts} graded decisions across ${vm.weakSpots.all().size} chart cells. " +
-                "This is what Practice mode and the chart heatmap use.",
+            "${vm.weakSpots.totalAttempts} graded decisions across ${vm.weakSpots.all().size} chart cells. " +
+                "This is what Practice mode and the My accuracy view on the Chart tab use. Clearing it sets every cell back to untested.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         var confirmClear by remember { mutableStateOf(false) }
-        OutlinedButton(onClick = { confirmClear = true }, enabled = vm.weakSpots.totalAttempts > 0, modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = { confirmClear = true },
+            enabled = vm.weakSpots.totalAttempts > 0,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8F00), contentColor = Color.Black),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text("Clear practice record")
         }
         if (confirmClear) {
