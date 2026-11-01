@@ -97,6 +97,18 @@ private val Topics = listOf(
         """.trimIndent(),
     ),
     Topic(
+        "Practice mode and the heatmap",
+        """
+        Random dealing is a poor teacher for the rare cells. Hard 16 against a 10 comes up every few minutes; soft 18 against a 3 or a pair of 4s against a 6 might come up once an evening, which is exactly why those are the ones people forget.
+
+        Every decision the coach grades, at the table or in practice, is recorded against its chart cell: how many times you have faced it and how many you missed, with recent misses counting for more. The Chart tab can show this as a heatmap (switch it to "My accuracy"): green cells you own, red cells you keep getting wrong, grey cells you have never been tested on. Tap any cell for the numbers and the explanation.
+
+        Practice mode on the Table tab deals you situations instead of random hands. Each one is picked by weight: cells you have missed recently come up far more often, cells you have never seen get a bonus, pairs and soft hands get a bump because real play under-serves them, and cells where the two best plays are close in expected value count as harder. The autopilot rows (hard 5 to 8, 17 and up) stay in the pool at a fraction of the weight so you cannot switch your brain off.
+
+        By default practice stops at the decision: you choose, the coach grades it, the odds and explanation appear, and Next deals the next one. Turn on "Play hands out" to see the situation through to the dealer's cards and the result. Practice uses play chips that are not your bankroll and does not change your lifetime statistics.
+        """.trimIndent(),
+    ),
+    Topic(
         "Expected value, in plain words",
         """
         Expected value (EV) is what an action is worth on average per dollar bet, if you could play the same situation millions of times. An EV of -0.54 means you lose 54 cents per dollar in the long run.

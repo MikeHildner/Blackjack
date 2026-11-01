@@ -2,6 +2,7 @@ package com.mikehildner.blackjack
 
 import android.app.Application
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -9,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.mikehildner.blackjack.engine.Action
 import com.mikehildner.blackjack.engine.BasicStrategy
 import com.mikehildner.blackjack.engine.Card
+import com.mikehildner.blackjack.engine.CellKey
+import com.mikehildner.blackjack.engine.CellRecord
 import com.mikehildner.blackjack.engine.Composition
 import com.mikehildner.blackjack.engine.CountTracker
 import com.mikehildner.blackjack.engine.DealSequence
@@ -18,14 +21,18 @@ import com.mikehildner.blackjack.engine.HiLo
 import com.mikehildner.blackjack.engine.Odds
 import com.mikehildner.blackjack.engine.OddsReport
 import com.mikehildner.blackjack.engine.Phase
+import com.mikehildner.blackjack.engine.PracticeDealer
 import com.mikehildner.blackjack.engine.Recommendation
 import com.mikehildner.blackjack.engine.RoundState
 import com.mikehildner.blackjack.engine.Rules
 import com.mikehildner.blackjack.engine.Shoe
+import com.mikehildner.blackjack.engine.Situation
+import com.mikehildner.blackjack.engine.WeakSpots
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.min
+import kotlin.random.Random
 
 /** What the coach has to say about the decision you just made. */
 data class Feedback(
@@ -48,6 +55,10 @@ data class Feedback(
  * behind on purpose: [DealSequence] breaks every transition into one-card
  * steps, and [present] plays them back with pauses, so a deal looks like a
  * deal. While that is happening [isAnimating] is true and nothing is tappable.
+ *
+ * Practice mode swaps in a throwaway [Game] per situation, dealt from a shoe
+ * stacked to open on a chart cell you need work on ([WeakSpots] chooses it).
+ * The real table game is parked meanwhile and comes back untouched.
  */
 class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -87,6 +98,32 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
     var pendingRules: Rules? by mutableStateOf(null)
         private set
 
+    // ---- practice mode
+    /** Your per-cell record against the chart. Read [weakSpotsVersion] in composables that show it. */
+    val weakSpots: WeakSpots = WeakSpots.parse(prefs.weakSpots)
+    var weakSpotsVersion: Int by mutableIntStateOf(0)
+        private set
+    var practice: Boolean by mutableStateOf(false)
+        private set
+    var playOut: Boolean by mutableStateOf(prefs.playOut)
+        private set
+    var practiceCorrect: Int by mutableIntStateOf(0)
+        private set
+    var practiceTotal: Int by mutableIntStateOf(0)
+        private set
+    /** Drill mode: the decision has been graded and the table waits for Next. */
+    var practiceAwaitingNext: Boolean by mutableStateOf(false)
+        private set
+    var practiceKey: CellKey? by mutableStateOf(null)
+        private set
+    /** Bumped when something asks the UI to show the table (e.g. "practice this cell" from the chart). */
+    var showTableRequests: Int by mutableIntStateOf(0)
+        private set
+
+    private var parkedTableGame: Game? = null
+    private var forcedNextCell: CellKey? = null
+    private val practiceRandom = Random.Default
+
     private var playback: Job? = null
     private var handRecorded = false
 
@@ -106,6 +143,13 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
     val canDeal: Boolean
         get() = !isAnimating && round.phase == Phase.BETTING && bet in rules.minBet..rules.maxBet && bet + rules.anteFor(bet) <= bankroll
 
+    /** The record for the cell being practised, refreshed after each grading. */
+    val practiceCellRecord: CellRecord?
+        get() {
+            weakSpotsVersion // dependency for recomposition
+            return practiceKey?.let { weakSpots.recordOf(it) }
+        }
+
     init {
         finish()
     }
@@ -120,14 +164,17 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
         return BasicStrategy.recommend(hand, up, rules, actions)
     }
 
-    /** The hint shown before acting, only in HINT mode. */
-    val hint: Recommendation? get() = if (settings.coachMode == CoachMode.HINT) recommendation() else null
+    /** The hint shown before acting, only in HINT mode and never in practice (it would be the answer). */
+    val hint: Recommendation? get() = if (settings.coachMode == CoachMode.HINT && !practice) recommendation() else null
 
+    /** Live odds. In practice they only appear once the decision has been graded, for the same reason. */
     fun odds(): OddsReport? {
         if (isAnimating) return null
-        val hand = round.currentHand ?: return null
+        if (practice && !practiceAwaitingNext && round.phase == Phase.PLAYER_TURN) return null
+        val hand = (if (practiceAwaitingNext) round.hands.getOrNull(round.activeHand) else round.currentHand) ?: return null
         val up = round.dealerUpCard ?: return null
-        return Odds(composition(), rules).analyze(hand, up, actions)
+        val available = if (practiceAwaitingNext) game.availableActions() else actions
+        return Odds(composition(), rules).analyze(hand, up, available)
     }
 
     fun insuranceEv(): Double = Odds(composition(), rules).evInsurance()
@@ -153,6 +200,7 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deal() {
+        if (practice) { practiceNext(); return }
         if (isAnimating || round.phase != Phase.BETTING) return
         if (!game.canBet(bet)) {
             changeBet(bet)
@@ -176,21 +224,45 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun act(action: Action) {
-        if (isAnimating) return
+        if (isAnimating || practiceAwaitingNext) return
         val hand = round.currentHand ?: return
         val up = round.dealerUpCard ?: return
         if (action !in actions) return
 
         val rec = BasicStrategy.recommend(hand, up, rules, actions)
         val fb = Feedback(hand, up, action, rec)
-        if (settings.coachMode != CoachMode.OFF) feedback = fb
-        stats = stats.copy(decisions = stats.decisions + 1, correct = stats.correct + if (fb.correct) 1 else 0)
+        if (settings.coachMode != CoachMode.OFF || practice) feedback = fb
+        grade(hand, up, rec, fb.correct)
 
+        if (practice && !playOut) {
+            // Drill: the decision is the whole exercise. Freeze the table and explain.
+            practiceAwaitingNext = true
+            actions = emptySet()
+            return
+        }
         game.act(action)
         present()
     }
 
+    /** Lifetime statistics (table only) and the per-cell record (table and practice). */
+    private fun grade(hand: Hand, up: Card, rec: Recommendation, correct: Boolean) {
+        if (practice) {
+            practiceTotal++
+            if (correct) practiceCorrect++
+        } else {
+            stats = stats.copy(decisions = stats.decisions + 1, correct = stats.correct + if (correct) 1 else 0)
+        }
+        // Only count it against the cell when the chart's own action was on the table; a forced
+        // fallback (three cards, cannot double) says nothing about whether you know the cell.
+        if (rec.action == rec.chart.primary) {
+            weakSpots.record(BasicStrategy.cellFor(Situation.of(hand, up), rules.variant), correct, System.currentTimeMillis())
+            prefs.weakSpots = weakSpots.serialize()
+            weakSpotsVersion++
+        }
+    }
+
     fun next() {
+        if (practice) { practiceNext(); return }
         if (isAnimating || round.phase != Phase.SETTLED) return
         val shuffled = game.nextRound()
         feedback = null
@@ -210,13 +282,13 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
         settings = new
         prefs.saveSettings(new)
         if (rulesChanged) {
-            if (round.phase == Phase.BETTING && !isAnimating) applyRules(new.rules) else pendingRules = new.rules
+            if (round.phase == Phase.BETTING && !isAnimating && !practice) applyRules(new.rules) else pendingRules = new.rules
         }
     }
 
     /** Start over with a fresh bankroll and zeroed statistics. Only between hands. */
     fun resetBankroll() {
-        if (isAnimating || (round.phase != Phase.BETTING && round.phase != Phase.SETTLED)) return
+        if (isAnimating || practice || (round.phase != Phase.BETTING && round.phase != Phase.SETTLED)) return
         game = createGame(rules, settings.startingBankroll)
         stats = Stats()
         prefs.saveStats(stats)
@@ -226,9 +298,72 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Play money: when you bust out, refill. */
     fun addChips() {
+        if (practice) return
         game.addFunds(settings.startingBankroll)
         bankroll = game.bankroll
         prefs.bankroll = bankroll
+    }
+
+    // --------------------------------------------------------------- practice
+
+    fun enterPractice(on: Boolean) {
+        if (on == practice || isAnimating) return
+        if (on) {
+            parkedTableGame = game
+            practice = true
+            practiceCorrect = 0
+            practiceTotal = 0
+            practiceNext()
+        } else {
+            playback?.cancel()
+            practice = false
+            practiceAwaitingNext = false
+            practiceKey = null
+            feedback = null
+            game = parkedTableGame ?: game
+            parkedTableGame = null
+            // Rules changed while practising apply now if the table is between hands.
+            pendingRules?.let { if (game.state.phase == Phase.BETTING) applyRules(it) }
+            finish()
+        }
+    }
+
+    fun togglePlayOut(on: Boolean) {
+        playOut = on
+        prefs.playOut = on
+    }
+
+    /** Deal the next practice situation: a forced cell if one was requested, else a weighted pick. */
+    fun practiceNext() {
+        if (!practice || isAnimating) return
+        val tableRules = parkedTableGame?.rules ?: rules
+        val practiceRules = pendingRules ?: tableRules
+        val key = forcedNextCell?.takeIf { it.variant == practiceRules.variant } ?: weakSpots.pick(practiceRules, practiceRandom)
+        forcedNextCell = null
+        practiceKey = key
+        practiceAwaitingNext = false
+        feedback = null
+        handRecorded = true // practice hands never touch lifetime stats
+
+        game = Game(practiceRules, PracticeDealer.shoeFor(key, practiceRules, practiceRandom), PRACTICE_BANKROLL)
+        round = RoundState() // clear the felt so the new situation is dealt from nothing
+        game.placeBet(bet.coerceIn(practiceRules.minBet, practiceRules.maxBet))
+        if (game.state.phase == Phase.INSURANCE) game.insurance(false)
+        present()
+    }
+
+    /** From the chart: switch to practice and deal this cell next. */
+    fun practiceCell(key: CellKey) {
+        if (isAnimating) return
+        forcedNextCell = key
+        showTableRequests++
+        if (practice) practiceNext() else enterPractice(true)
+    }
+
+    fun clearWeakSpots() {
+        weakSpots.clear()
+        prefs.weakSpots = ""
+        weakSpotsVersion++
     }
 
     // --------------------------------------------------------------- internals
@@ -290,7 +425,7 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
         actions = game.availableActions()
         bankroll = game.bankroll
         decksRemaining = game.shoe.decksRemaining
-        prefs.bankroll = bankroll
+        if (!practice) prefs.bankroll = bankroll
         isAnimating = false
         updateShownCount()
         if (round.phase == Phase.SETTLED && !handRecorded) {
@@ -301,9 +436,14 @@ class BlackjackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Running count and cards seen for the cards currently visible on the table. */
     private fun updateShownCount() {
+        if (practice) return // the practice shoe is not the table shoe
         val dealerVisible = if (round.holeCardHidden) round.dealerCards.take(1) else round.dealerCards
         val visible = round.hands.flatMap { it.cards } + dealerVisible
         runningCount = countAtRoundStart + visible.sumOf { HiLo.value(it) }
         cardsSeen = seenAtRoundStart + visible.size
+    }
+
+    private companion object {
+        const val PRACTICE_BANKROLL = 1_000_000
     }
 }

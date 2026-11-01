@@ -192,6 +192,27 @@ fun SettingsScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        vm.weakSpotsVersion // recompose when the record changes
+        Text(
+            "Practice record: ${vm.weakSpots.totalAttempts} graded decisions across ${vm.weakSpots.all().size} chart cells. " +
+                "This is what Practice mode and the chart heatmap use.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        var confirmClear by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { confirmClear = true }, enabled = vm.weakSpots.totalAttempts > 0, modifier = Modifier.fillMaxWidth()) {
+            Text("Clear practice record")
+        }
+        if (confirmClear) {
+            AlertDialog(
+                onDismissRequest = { confirmClear = false },
+                title = { Text("Clear the practice record?") },
+                text = { Text("Every cell goes back to untested. Bankroll and lifetime statistics are not affected.") },
+                confirmButton = { TextButton(onClick = { vm.clearWeakSpots(); confirmClear = false }) { Text("Clear") } },
+                dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+            )
+        }
+
         SectionHeader("Reset settings")
         Text(
             "Puts every setting above back to the defaults: Vegas Strip rules, decision grading on, live odds on, count off, animations on. Bankroll and statistics are not touched.",

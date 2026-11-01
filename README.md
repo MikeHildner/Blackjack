@@ -13,7 +13,8 @@ Play money only. There is nothing to buy and nothing phones home.
 | **Table** | A full game: bet, hit, stand, double, split, surrender, insurance. Cards are dealt one at a time in real order, and the dealer plays out draw by draw. Configurable casino rules. |
 | **Coach** (on the table) | Grades every decision against basic strategy and explains *why* in plain English. Or shows the right play before you act. |
 | **Live odds** (on the table) | Your bust chance, the dealer bust chance, and the expected value of every available action, computed from the cards actually left in the shoe. |
-| **Chart** | The complete basic strategy chart for the rules you chose. The cell for your current hand is highlighted while you play. |
+| **Chart** | The complete basic strategy chart for the rules you chose. The cell for your current hand is highlighted while you play. Switch to "My accuracy" for a heatmap of how you have done on every cell; tap a cell to practise it. |
+| **Practice mode** | On the Table tab. Deals you situations weighted toward the cells you miss, the ones you have never seen, and the genuinely close calls. Decision drill by default, or play each situation out. |
 | **Count** | Hi-Lo card counting: the live running and true count at your table, a betting suggestion, and a flash-card drill. |
 | **Learn** | Rules, soft vs hard hands, payouts, insurance, expected value, counting, a glossary, and a live breakdown of what each house rule costs you. |
 | **Free Bet Blackjack** | The variant dealt at Hard Rock Tulsa: free doubles on 9-11, free splits, dealer 22 pushes. Strategy is computed from expected value for the rules in play, for both real-money and free-bet hands. |

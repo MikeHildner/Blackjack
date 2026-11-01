@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,6 +39,8 @@ enum class Screen(val label: String, val icon: ImageVector) {
 @Composable
 fun BlackjackApp(vm: BlackjackViewModel = viewModel()) {
     var screen by rememberSaveable { mutableStateOf(Screen.TABLE) }
+    // Other screens (the chart's "practice this cell") can ask to show the table.
+    LaunchedEffect(vm.showTableRequests) { if (vm.showTableRequests > 0) screen = Screen.TABLE }
 
     Scaffold(
         bottomBar = {

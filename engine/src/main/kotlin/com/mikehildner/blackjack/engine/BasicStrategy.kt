@@ -274,12 +274,24 @@ object BasicStrategy {
      * One chart cell. [hasFreeBet] only matters for Free Bet Blackjack, where a
      * hand riding on house money (always a split hand) plays differently.
      */
-    fun chartCell(section: Section, key: Int, dealerUp: Int, rules: Rules, hasFreeBet: Boolean = false): ChartCode {
-        val situation = when (section) {
-            Section.HARD -> Situation(total = key, soft = false, pairOf = null, dealerUp = dealerUp, twoCards = true)
-            Section.SOFT -> Situation(total = key, soft = true, pairOf = null, dealerUp = dealerUp, twoCards = true)
-            Section.PAIRS -> Situation(total = if (key == 11) 12 else key * 2, soft = key == 11, pairOf = key, dealerUp = dealerUp, twoCards = true)
-        }.copy(hasFreeBet = hasFreeBet, fromSplit = hasFreeBet)
+    fun chartCell(section: Section, key: Int, dealerUp: Int, rules: Rules, hasFreeBet: Boolean = false): ChartCode =
+        chartCell(CellKey(rules.variant, section, key, dealerUp, hasFreeBet), rules)
+
+    fun chartCell(cell: CellKey, rules: Rules): ChartCode {
+        val situation = cell.situation()
         return if (rules.variant == Variant.FREE_BET) FreeBetStrategy.decide(situation, rules).code else decide(situation, rules)
+    }
+
+    /**
+     * Which chart cell a live situation belongs to. Three-card hands map to
+     * their total's row; totals off the chart clamp to its edge rows.
+     */
+    fun cellFor(s: Situation, variant: Variant): CellKey {
+        val hardRows = rows(Section.HARD, variant)
+        return when {
+            s.pairOf != null && s.twoCards -> CellKey(variant, Section.PAIRS, s.pairOf, s.dealerUp, s.hasFreeBet)
+            s.soft -> CellKey(variant, Section.SOFT, s.total.coerceIn(13, 20), s.dealerUp, s.hasFreeBet)
+            else -> CellKey(variant, Section.HARD, s.total.coerceIn(hardRows.first(), hardRows.last()), s.dealerUp, s.hasFreeBet)
+        }
     }
 }

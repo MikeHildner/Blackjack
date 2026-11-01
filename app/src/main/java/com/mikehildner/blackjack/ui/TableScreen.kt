@@ -20,9 +20,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -68,6 +70,7 @@ fun ev(v: Double): String = String.format(Locale.US, "%+.2f", v)
 fun TableScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     val round = vm.round
     Column(modifier.fillMaxSize()) {
+        ModeBar(vm)
         StatusRow(vm)
         Column(
             Modifier
@@ -95,8 +98,45 @@ fun TableScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
 
 // ------------------------------------------------------------------ status
 
+/** Play or Practice, and the practice "play hands out" switch. */
+@Composable
+private fun ModeBar(vm: BlackjackViewModel) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(FeltDark)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(selected = !vm.practice, onClick = { vm.enterPractice(false) }, label = { Text("Play") }, enabled = !vm.isAnimating)
+        FilterChip(selected = vm.practice, onClick = { vm.enterPractice(true) }, label = { Text("Practice") }, enabled = !vm.isAnimating)
+        if (vm.practice) {
+            Spacer(Modifier.weight(1f))
+            Text("Play hands out", fontSize = 12.sp)
+            Switch(checked = vm.playOut, onCheckedChange = vm::togglePlayOut)
+        }
+    }
+}
+
 @Composable
 private fun StatusRow(vm: BlackjackViewModel) {
+    if (vm.practice) {
+        val record = vm.practiceCellRecord
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(FeltDark)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            val pctText = if (vm.practiceTotal == 0) "–" else "${vm.practiceCorrect * 100 / vm.practiceTotal}%"
+            StatusItem("This session", "${vm.practiceCorrect}/${vm.practiceTotal}  $pctText", Gold)
+            StatusItem("Situation", vm.practiceKey?.label() ?: "–")
+            StatusItem("Your record", if (record == null) "new" else "${record.attempts - record.misses}/${record.attempts}", if (record != null && record.accuracy < 0.8) Bad else Good)
+        }
+        return
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -272,8 +312,14 @@ private fun Panel(title: String, accent: Color = FeltLight, content: @Composable
 
 @Composable
 private fun CoachPanel(vm: BlackjackViewModel) {
-    if (vm.settings.coachMode == CoachMode.OFF) return
+    if (vm.settings.coachMode == CoachMode.OFF && !vm.practice) return
     val round = vm.round
+
+    if (vm.practice && !vm.isAnimating && vm.feedback == null && round.phase == Phase.PLAYER_TURN) {
+        Panel("Practice", Gold) {
+            Text("${vm.practiceKey?.label() ?: "This situation"}. What is the play? The odds and the explanation appear after you decide.")
+        }
+    }
 
     when (round.phase) {
         Phase.INSURANCE -> {
@@ -388,11 +434,12 @@ private fun Controls(vm: BlackjackViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            when (vm.round.phase) {
-                Phase.BETTING -> BettingControls(vm)
-                Phase.INSURANCE -> InsuranceControls(vm)
-                Phase.PLAYER_TURN -> ActionControls(vm)
-                Phase.SETTLED -> SettledControls(vm)
+            when {
+                vm.practice && (vm.practiceAwaitingNext || vm.round.phase == Phase.SETTLED || vm.round.phase == Phase.BETTING) -> PracticeNextControls(vm)
+                vm.round.phase == Phase.BETTING -> BettingControls(vm)
+                vm.round.phase == Phase.INSURANCE -> InsuranceControls(vm)
+                vm.round.phase == Phase.PLAYER_TURN -> ActionControls(vm)
+                else -> SettledControls(vm)
             }
         }
     }
@@ -474,6 +521,23 @@ private fun ActionButton(vm: BlackjackViewModel, action: Action, hint: Action?, 
         ),
     ) {
         Text(if (free) "Free ${action.label.lowercase()}" else action.label, maxLines = 1)
+    }
+}
+
+@Composable
+private fun PracticeNextControls(vm: BlackjackViewModel) {
+    val fb = vm.feedback
+    if (fb != null && vm.practiceAwaitingNext) {
+        Text(
+            if (fb.correct) "Right. ${fb.recommended.action.label} it is." else "The play was ${fb.recommended.action.label.lowercase()}; you chose ${fb.chosen.label.lowercase()}.",
+            color = if (fb.correct) Good else Bad,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    Button(onClick = vm::practiceNext, modifier = Modifier.fillMaxWidth(), enabled = !vm.isAnimating) {
+        Text("Next situation", fontSize = 18.sp)
     }
 }
 

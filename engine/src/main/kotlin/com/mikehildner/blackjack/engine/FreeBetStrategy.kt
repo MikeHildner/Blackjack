@@ -75,7 +75,7 @@ object FreeBetStrategy {
      * softness, pair-ness and card count affect the maths, so any cards that
      * produce them will do.
      */
-    internal fun representativeHand(s: Situation): Hand {
+    fun representativeHand(s: Situation): Hand {
         val bet = if (s.hasFreeBet) 0 else UNIT
         val free = if (s.hasFreeBet) UNIT else 0
         val values: List<Int> = when {

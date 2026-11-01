@@ -2,6 +2,7 @@ package com.mikehildner.blackjack.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,16 +36,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.mikehildner.blackjack.BlackjackViewModel
+import com.mikehildner.blackjack.engine.Action
 import com.mikehildner.blackjack.engine.BasicStrategy
+import com.mikehildner.blackjack.engine.Card
+import com.mikehildner.blackjack.engine.CellKey
+import com.mikehildner.blackjack.engine.CellRecord
 import com.mikehildner.blackjack.engine.ChartCode
+import com.mikehildner.blackjack.engine.FreeBetStrategy
+import com.mikehildner.blackjack.engine.Rank
+import com.mikehildner.blackjack.engine.Rules
 import com.mikehildner.blackjack.engine.Situation
+import com.mikehildner.blackjack.engine.Suit
 import com.mikehildner.blackjack.engine.Variant
 import com.mikehildner.blackjack.ui.theme.Gold
 import java.util.Locale
@@ -55,6 +67,11 @@ private val SurrenderColor = Color(0xFFBDBDBD)
 
 private val FreeDoubleColor = Color(0xFFE65100)
 private val FreeSplitColor = Color(0xFF6A1B9A)
+
+private val UntestedColor = Color(0xFF37474F)
+private val AccuracyLow = Color(0xFFC62828)
+private val AccuracyMid = Color(0xFFF9A825)
+private val AccuracyHigh = Color(0xFF2E7D32)
 
 private fun ChartCode.color(): Color = when (this) {
     ChartCode.HIT -> HitColor
@@ -72,11 +89,19 @@ private fun ChartCode.textColor(): Color = when (this) {
     else -> Color.White
 }
 
+/** Red at 60% or below, amber at 80%, green at 100%. */
+private fun accuracyColor(accuracy: Double): Color = when {
+    accuracy <= 0.6 -> AccuracyLow
+    accuracy <= 0.8 -> lerp(AccuracyLow, AccuracyMid, ((accuracy - 0.6) / 0.2).toFloat())
+    else -> lerp(AccuracyMid, AccuracyHigh, ((accuracy - 0.8) / 0.2).toFloat())
+}
+
 /**
- * The full basic strategy chart for the table rules currently in play.
- * If a hand is in progress, the matching cell is enlarged and ringed in
- * white, its row and column are dimmed as a crosshair, and the chart
- * scrolls to it.
+ * The full basic strategy chart for the table rules currently in play, or a
+ * heatmap of your own accuracy on the same grid. If a hand is in progress,
+ * the matching cell is enlarged and ringed in white, its row and column are
+ * dimmed as a crosshair, and the chart scrolls to it. Tap any cell for its
+ * explanation and record, and to practise it.
  */
 @Composable
 fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
@@ -86,6 +111,9 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     // Free Bet: a hand riding on house money plays differently, so the chart has two faces.
     var freeBetHand by rememberSaveable { mutableStateOf(false) }
     val showFreeBetHand = freeBetGame && (if (current != null) current.hasFreeBet else freeBetHand)
+    var heatmap by rememberSaveable { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<CellKey?>(null) }
+    vm.weakSpotsVersion // recompose the heatmap when the record changes
 
     // Free Bet cells are computed from EV; cache the whole grid per rules so scrolling stays smooth.
     val cells = remember(rules, showFreeBetHand) {
@@ -99,7 +127,7 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
     // When a hand is in play, scroll the chart so its cell sits mid-screen. The cell reports its
     // position within the scrolled content; the effect fires once per new highlight.
     val scrollState = rememberScrollState()
-    val highlight = current?.let { chartPosition(it, rules.variant) }
+    val highlight = current?.let { BasicStrategy.cellFor(it, rules.variant) }
     var viewportTop by remember { mutableStateOf(0f) }
     var viewportHeight by remember { mutableStateOf(0) }
     var highlightContentY by remember { mutableStateOf<Float?>(null) }
@@ -127,6 +155,10 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(selected = !heatmap, onClick = { heatmap = false }, label = { Text("Strategy") })
+            FilterChip(selected = heatmap, onClick = { heatmap = true }, label = { Text("My accuracy") })
+        }
         if (freeBetGame) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = !showFreeBetHand, onClick = { freeBetHand = false }, label = { Text("Real-money hand") }, enabled = current == null)
@@ -139,29 +171,34 @@ fun StrategyChartScreen(vm: BlackjackViewModel, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Legend(freeBetGame)
-        if (highlight != null) {
-            Text(
-                "Your hand is outlined in white below.",
-                fontSize = 12.sp,
-                color = Gold,
-            )
-        }
+        if (heatmap) HeatmapLegend(vm.weakSpots.totalAttempts) else Legend(freeBetGame)
+        Text(
+            if (highlight != null) "Your hand is outlined in white below. Tap any cell for details." else "Tap any cell for its explanation, your record, and a practice button.",
+            fontSize = 12.sp,
+            color = if (highlight != null) Gold else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         BasicStrategy.Section.entries.forEach { section ->
             ChartTable(
-                section, cells.getValue(section), rules.variant, highlight,
+                section, cells.getValue(section), rules.variant, showFreeBetHand, highlight, heatmap,
+                recordOf = { vm.weakSpots.recordOf(it) },
+                onTap = { selected = it },
                 onHighlightPositioned = { rootY -> highlightContentY = rootY - viewportTop + scrollState.value },
             )
         }
         Spacer(Modifier.height(8.dp))
     }
-}
 
-/** Which (section, row) a live situation lands on. */
-private fun chartPosition(s: Situation, variant: Variant): Triple<BasicStrategy.Section, Int, Int> = when {
-    s.pairOf != null && s.twoCards -> Triple(BasicStrategy.Section.PAIRS, s.pairOf!!, s.dealerUp)
-    s.soft -> Triple(BasicStrategy.Section.SOFT, s.total.coerceIn(13, 20), s.dealerUp)
-    else -> Triple(BasicStrategy.Section.HARD, s.total.coerceIn(5, BasicStrategy.rows(BasicStrategy.Section.HARD, variant).last()), s.dealerUp)
+    selected?.let { key ->
+        CellDialog(
+            key = key,
+            code = cells[key.section]?.get(key.row)?.get(key.dealerUp) ?: BasicStrategy.chartCell(key, rules),
+            record = vm.weakSpots.recordOf(key),
+            rules = rules,
+            canPractice = !key.freeBetHand && !(key.section == BasicStrategy.Section.HARD && key.row == 20),
+            onPractice = { vm.practiceCell(key); selected = null },
+            onDismiss = { selected = null },
+        )
+    }
 }
 
 @Composable
@@ -187,6 +224,22 @@ private fun Legend(freeBet: Boolean) {
 }
 
 @Composable
+private fun HeatmapLegend(totalAttempts: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        LegendItem("100%", AccuracyHigh)
+        LegendItem("80%", AccuracyMid)
+        LegendItem("60% or less", AccuracyLow)
+        LegendItem("Untested", UntestedColor)
+    }
+    Text(
+        if (totalAttempts == 0) "Nothing recorded yet. Every decision the coach grades, at the table or in practice, colours a cell here."
+        else "$totalAttempts graded decisions so far. The small number in a cell is how many times you have faced it; recent misses weigh most in practice.",
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
 private fun LegendItem(text: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(
@@ -204,33 +257,41 @@ private fun ChartTable(
     section: BasicStrategy.Section,
     cells: Map<Int, Map<Int, ChartCode>>,
     variant: Variant,
-    highlight: Triple<BasicStrategy.Section, Int, Int>?,
+    freeBetHand: Boolean,
+    highlight: CellKey?,
+    heatmap: Boolean,
+    recordOf: (CellKey) -> CellRecord?,
+    onTap: (CellKey) -> Unit,
     onHighlightPositioned: (Float) -> Unit,
 ) {
     val labelWidth = 40.dp
-    val inSection = highlight?.first == section
+    val inSection = highlight?.section == section
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(section.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Box(Modifier.width(labelWidth))
             BasicStrategy.dealerColumns.forEach { up ->
-                val hit = inSection && highlight?.third == up
+                val hit = inSection && highlight?.dealerUp == up
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(BasicStrategy.columnLabel(up), fontSize = if (hit) 14.sp else 12.sp, fontWeight = FontWeight.Bold, color = if (hit) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         BasicStrategy.rows(section, variant).forEach { row ->
-            val rowHit = inSection && highlight?.second == row
+            val rowHit = inSection && highlight?.row == row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(labelWidth), contentAlignment = Alignment.Center) {
                     Text(BasicStrategy.rowLabel(section, row, variant), fontSize = if (rowHit) 14.sp else 12.sp, fontWeight = FontWeight.Bold, color = if (rowHit) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 BasicStrategy.dealerColumns.forEach { up ->
+                    val key = CellKey(variant, section, row, up, freeBetHand)
                     val code = cells.getValue(row).getValue(up)
-                    val isHighlight = rowHit && highlight?.third == up
+                    val record = recordOf(key)
+                    val isHighlight = rowHit && highlight?.dealerUp == up
                     // Cells in the highlighted row and column are dimmed slightly so the crosshair reads at a glance.
-                    val inCrosshair = inSection && !isHighlight && (rowHit || highlight?.third == up)
+                    val inCrosshair = inSection && !isHighlight && (rowHit || highlight?.dealerUp == up)
+                    val fill = if (heatmap) (record?.let { accuracyColor(it.accuracy) } ?: UntestedColor) else code.color()
+                    val ink = if (heatmap) Color.White else code.textColor()
                     Box(
                         Modifier
                             .weight(1f)
@@ -244,7 +305,8 @@ private fun ChartTable(
                                 else Modifier,
                             )
                             .clip(RoundedCornerShape(3.dp))
-                            .background(code.color())
+                            .background(fill)
+                            .clickable { onTap(key) }
                             .then(
                                 when {
                                     // White ring with a dark inner edge: visible on every cell colour, including amber.
@@ -255,10 +317,67 @@ private fun ChartTable(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(code.code, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = code.textColor())
+                        Text(code.code, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ink)
+                        if (heatmap && record != null) {
+                            Text(
+                                record.attempts.toString(),
+                                fontSize = 7.sp,
+                                lineHeight = 7.sp,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 2.dp, top = 1.dp),
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** Everything about one cell: the play, why, your record, and a way to drill it. */
+@Composable
+private fun CellDialog(
+    key: CellKey,
+    code: ChartCode,
+    record: CellRecord?,
+    rules: Rules,
+    canPractice: Boolean,
+    onPractice: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val explanation = remember(key, rules) {
+        val s = key.situation()
+        val hand = FreeBetStrategy.representativeHand(s)
+        val up = Card(if (key.dealerUp == 11) Rank.ACE else if (key.dealerUp == 10) Rank.TEN else Rank.entries.first { it.value == key.dealerUp }, Suit.SPADES)
+        val available = buildSet {
+            add(Action.HIT); add(Action.STAND); add(Action.DOUBLE)
+            if (s.pairOf != null) add(Action.SPLIT)
+            if (rules.lateSurrender && !s.fromSplit) add(Action.SURRENDER)
+        }
+        BasicStrategy.recommend(hand, up, rules, available)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(key.label()) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Chart: ${code.code} = ${explanation.action.label}${if (code.isFree) " (house money)" else ""}", fontWeight = FontWeight.Bold)
+                Text(explanation.reason, fontSize = 14.sp)
+                Text(
+                    when {
+                        record == null -> "You have not been graded on this cell yet."
+                        else -> "Your record: ${record.attempts - record.misses} right out of ${record.attempts} (${(record.accuracy * 100).toInt()}%)."
+                    },
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            if (canPractice) TextButton(onClick = onPractice) { Text("Practise this cell") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

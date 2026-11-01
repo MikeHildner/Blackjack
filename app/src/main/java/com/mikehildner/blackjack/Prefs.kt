@@ -124,6 +124,16 @@ class Prefs(context: Context) {
         get() = sp.getInt("lastBet", 1_000)
         set(value) = sp.edit { putInt("lastBet", value) }
 
+    /** Serialised per-cell practice record; see WeakSpots.serialize. */
+    var weakSpots: String
+        get() = sp.getString("weakSpots", "") ?: ""
+        set(value) = sp.edit { putString("weakSpots", value) }
+
+    /** Practice mode: play situations out to the end rather than stopping at the decision. */
+    var playOut: Boolean
+        get() = sp.getBoolean("playOut", false)
+        set(value) = sp.edit { putBoolean("playOut", value) }
+
     fun loadStats() = Stats(
         hands = sp.getInt("stats.hands", 0),
         decisions = sp.getInt("stats.decisions", 0),

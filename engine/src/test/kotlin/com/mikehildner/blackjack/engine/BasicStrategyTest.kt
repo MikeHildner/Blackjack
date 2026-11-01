@@ -114,6 +114,26 @@ class BasicStrategyTest {
     }
 
     @Test
+    fun `cellFor maps live situations onto chart cells`() {
+        fun cell(hand: Hand, up: String, variant: Variant = Variant.CLASSIC) =
+            BasicStrategy.cellFor(Situation.of(hand, Card.of(up)), variant)
+
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.HARD, 16, 10), cell(Hand.of(10, "10h", "6c"), "10s"))
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.HARD, 16, 10), cell(Hand.of(10, "5h", "6c", "5d"), "10s"), "three cards use the total")
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.SOFT, 18, 3), cell(Hand.of(10, "Ah", "7c"), "3s"))
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.PAIRS, 8, 11), cell(Hand.of(10, "8h", "8c"), "As"))
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.PAIRS, 10, 6), cell(Hand.of(10, "Kh", "Qc"), "6s"))
+        assertEquals(CellKey(Variant.CLASSIC, BasicStrategy.Section.HARD, 17, 5), cell(Hand.of(10, "Kh", "9c"), "5s"), "19 clamps to the 17+ row in classic")
+        assertEquals(CellKey(Variant.FREE_BET, BasicStrategy.Section.HARD, 19, 5), cell(Hand.of(10, "Kh", "9c"), "5s", Variant.FREE_BET), "Free Bet has its own 19 row")
+        val freeHand = Hand(listOf(Card.of("9h"), Card.of("4c")), bet = 0, isFromSplit = true, freeBet = 100)
+        assertEquals(CellKey(Variant.FREE_BET, BasicStrategy.Section.HARD, 13, 4, freeBetHand = true), cell(freeHand, "4s", Variant.FREE_BET))
+        for (section in BasicStrategy.Section.entries) for (row in BasicStrategy.rows(section)) for (up in BasicStrategy.dealerColumns) {
+            val key = CellKey(Variant.CLASSIC, section, row, up)
+            assertEquals(BasicStrategy.chartCell(section, row, up, s17), BasicStrategy.chartCell(key, s17))
+        }
+    }
+
+    @Test
     fun `every recommendation comes with an explanation`() {
         for (section in BasicStrategy.Section.entries) {
             for (row in BasicStrategy.rows(section)) {
